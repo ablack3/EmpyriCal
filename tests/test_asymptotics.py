@@ -49,8 +49,13 @@ def test_fitNullNonNormalLl_matches_fitNull(sccs):
     assert np.allclose([nn[0], nn[1]], [null[0], null[1]])
 
 
+@pytest.mark.slow
 def test_fitNullNonNormalLl_grid_approximation():
-    """Fitting the null from grid profiles recovers the asymptotic answer."""
+    """Fitting the null from grid profiles recovers the asymptotic answer.
+
+    Slow: every optimiser step numerically integrates a 1000-point profile for
+    each of 50 controls.
+    """
     from empiricalcalibration._rmath import dnorm
     import pandas as pd
 
@@ -68,7 +73,9 @@ def test_fitNullNonNormalLl_grid_approximation():
     assert abs(null[1] - goldStandardNull[1]) < 0.1
 
 
+@pytest.mark.slow
 def test_fitNullNonNormalLl_errors_and_warnings(sccs):
+    """Slow: the custom and skew-normal branches integrate per control per step."""
     negatives = sccs[sccs.groundTruth == 0].copy()
 
     bad = negatives.copy()

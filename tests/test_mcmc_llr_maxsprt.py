@@ -84,7 +84,9 @@ def test_calibrateLlr_normal(sccs):
         ec.calibrateLlr(null, positive, upper=False)
 
 
+@pytest.mark.slow
 def test_calibrateLlr_grid():
+    """Slow: fits the null from 50 thousand-point profiles before calibrating."""
     ec.set_seed(123)
     data = ec.simulateControls(n=50, mean=0.2, sd=0.2, trueLogRr=0, seLogRr=0.1)
     point = np.linspace(np.log(0.1), np.log(10), 1000)
@@ -141,6 +143,7 @@ def test_computeCvBinomial_boundary_conditions():
             ec.computeCvBinomial([0, 1, 2], z=1, **kwargs)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("fn,kwargs,expected", [
     (ec.computeCvPoisson, dict(), 2.5451774444795623),
     (ec.computeCvBinomial, dict(z=4), 3.0649537425959439),
