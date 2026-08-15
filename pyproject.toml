@@ -30,11 +30,14 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+test = ["pytest>=7.0", "pytest-cov>=4.0"]
+docs = ["jupyter>=1.0", "nbclient>=0.7"]
 
 [project.urls]
-Homepage = "https://ohdsi.github.io/EmpiricalCalibration/"
-Source = "https://github.com/OHDSI/EmpiricalCalibration"
+Homepage = "https://ablack3.github.io/EmpyriCal/"
+Documentation = "https://ablack3.github.io/EmpyriCal/"
+Source = "https://github.com/ablack3/EmpyriCal"
+"Upstream R package" = "https://github.com/OHDSI/EmpiricalCalibration"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/empiricalcalibration"]
@@ -45,3 +48,23 @@ include = ["src/empiricalcalibration", "tests", "README.md"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "slow: tests that take more than a few seconds (deselect with '-m \"not slow\"')",
+]
+
+[tool.coverage.run]
+source = ["empiricalcalibration"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# The public API deliberately keeps the R package's camelCase names, and the
+# ports keep R's own argument names (including `iter`, which shadows a builtin).
+ignore = ["E741", "A002"]

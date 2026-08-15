@@ -1,17 +1,33 @@
-.Rproj.user
-.Rhistory
-.RData
-src/*.o
-src/*.so
-src/*.dll
-/Debug
-
 # Python
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
 dist/
+build/
 *.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Quarto
+/docs/_site/
+/docs/.quarto/
+/docs/**/*_files/
+.quarto/
+
+# R (the package now lives under extras/r-package/)
+.Rproj.user
+.Rhistory
+.RData
+extras/r-package/src/*.o
+extras/r-package/src/*.so
+extras/r-package/src/*.dll
+/Debug
+
+# macOS
+.DS_Store
