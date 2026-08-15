@@ -1,0 +1,173 @@
+---
+title: "Non-normal likelihood approximations"
+subtitle: "When the per-estimate normal assumption breaks"
+---
+
+## Two normal assumptions, only one of them safe
+
+The [empirical null](null-distribution.qmd) makes two separate normality
+assumptions, and they deserve different levels of trust.
+
+The first is that the **systematic error across hypotheses** is normal,
+$\epsilon \sim N(\mu, \sigma^2)$. This is a modelling choice about a population
+of biases, and it is reasonable in the way most random-effects assumptions are.
+
+The second is that **each individual estimate's likelihood** is normal — that
+$\hat\beta_i$ with standard error $\hat\sigma_i$ captures everything the data
+say about hypothesis $i$. This is an asymptotic approximation, and it fails
+exactly where safety surveillance lives: rare outcomes, few events, early looks
+in a sequential analysis. With three events the true likelihood for a log rate
+ratio is markedly skewed, and summarising it by a point and a symmetric standard
+error throws away the shape.
+
+`fitNullNonNormalLl` and `calibrateLlr` keep the first assumption and drop the
+second.
+
+## The generalised likelihood
+
+If hypothesis $i$ contributes an arbitrary likelihood function $L_i(x)$ over the
+true log relative risk $x$, rather than a normal one, the null's likelihood
+becomes a convolution:
+
+::: {.keyresult}
+$$
+\ell(\mu, \sigma) \;=\; \sum_{i=1}^{n}
+\log \int_{-\infty}^{\infty} \phi(x;\, \mu,\, \sigma)\; L_i(x)\ dx .
+$$
+:::
+
+Each term integrates that control's likelihood against the null density: the
+probability of the data for control $i$, averaged over the systematic errors the
+null says are possible. Substituting a normal $L_i$ recovers the closed form
+$\phi(\hat\beta_i; \mu, \sqrt{\sigma^2 + \hat\sigma_i^2})$ from before, so this
+is a strict generalisation.
+
+There is no closed form for general $L_i$, so the integral is evaluated
+numerically over $\mu \pm 10\sigma$ for every control at every optimiser step.
+That makes `fitNullNonNormalLl` substantially slower than `fitNull` — seconds
+rather than milliseconds.
+
+## The four shapes
+
+The function detects which of four representations you passed from the columns
+present, and prints what it detected.
+
+### Normal
+
+Columns `logRr`, `seLogRr`. Detected first, and short-circuits straight to
+`fitNull` — no integration.
+
+$$
+\log L(x) = \log \phi(x;\, \hat\beta,\, \hat\sigma)
+$$
+
+### Custom parametric
+
+Columns `mu`, `sigma`, `gamma`. A skewed three-parameter form used by some OHDSI
+analytics packages to summarise a likelihood profile compactly:
+
+$$
+\log L(x) \;=\; e^{\gamma (x - \mu)} \cdot \frac{-(x-\mu)^2}{2\sigma^2}
+$$
+
+$\gamma = 0$ gives back a normal log-likelihood; $\gamma \ne 0$ tilts it.
+
+### Skew normal
+
+Columns `mu`, `sigma`, `alpha`.
+
+$$
+\log L(x) \;=\; \log 2 \;+\; \log\phi\!\left(x; \mu, \sigma\right)
+\;+\; \log\Phi\!\left(\alpha (x - \mu);\, 0,\, \sigma\right)
+$$
+
+$\alpha$ is the skewness; $\alpha = 0$ is exactly normal.
+
+::: {.callout-note collapse="true"}
+## A numerical detail that matters
+
+The last term is computed with a log-scale normal CDF rather than
+`log(pnorm(...))`. Over a $\pm 10\sigma$ integration range the argument routinely
+drops below $-38$, where the probability underflows to zero and its logarithm to
+$-\infty$, silently poisoning the integral. Computing the log directly keeps it
+finite.
+:::
+
+### Grid
+
+A likelihood **profile**: the log-likelihood evaluated on a grid of points, with
+no parametric form imposed at all. This is the most faithful representation and
+the one to prefer when the analytics package can emit it.
+
+Two layouts are accepted. A data frame with columns `point` and `value` is one
+profile. A data frame whose *column names* are the grid points and whose rows
+are profiles handles many controls at once — the layout OHDSI likelihood-profile
+exports use.
+
+Between grid points the log-likelihood is linearly interpolated. Outside the
+grid it is linearly extrapolated with the slope clamped so the profile can only
+stay flat or decrease — an unbounded likelihood outside the profiled region
+would otherwise let the optimiser run away.
+
+## Worked example
+
+Build grid profiles from simulated controls and confirm the fit recovers the
+same answer the asymptotic route gives:
+
+```{python}
+import numpy as np
+import pandas as pd
+import empiricalcalibration as ec
+from empiricalcalibration._rmath import dnorm
+
+ec.set_seed(123)
+data = ec.simulateControls(n=50, mean=0.2, sd=0.2, trueLogRr=0, seLogRr=0.1)
+
+asymptotic = ec.fitNull(data.logRr, data.seLogRr)
+
+point = np.linspace(np.log(0.1), np.log(10), 1000)
+profiles = [
+    pd.DataFrame({"point": point,
+                  "value": dnorm(point, data.logRr.iloc[i], data.seLogRr.iloc[i])})
+    for i in range(len(data))
+]
+from_grid = ec.fitNullNonNormalLl(profiles)
+```
+
+```{python}
+print(f"asymptotic:  mean {asymptotic[0]:.4f}  sd {asymptotic[1]:.4f}")
+print(f"from grids:  mean {from_grid[0]:.4f}  sd {from_grid[1]:.4f}")
+```
+
+The profiles here were *built* from normal likelihoods, so agreement is the
+correct outcome and a check that the grid machinery is faithful. The reason to
+use the grid path in practice is the case where the profiles are **not** normal,
+and there the two routes will legitimately disagree — the grid answer being the
+better one.
+
+## Where it flows through
+
+The same four representations are accepted by `calibrateLlr`, so a sequential
+surveillance analysis can carry non-normal likelihoods end to end: fit the null
+from profiles, then calibrate the LLR from profiles. See
+[MaxSPRT](maxsprt.qmd).
+
+`calibrateP`, by contrast, takes a point estimate and standard error — the
+calibrated p-value has a closed form only under normality. To calibrate a
+non-normal estimate, work with the LLR instead.
+
+## API
+
+| Function | Accepts |
+|---|---|
+| [`fitNullNonNormalLl(likelihoodApproximations)`](../reference/index.qmd#fitnullnonnormalll) | frame of normal / custom / skew-normal parameters, wide grid frame, or list of profiles |
+| [`calibrateLlr(null, likelihoodApproximation)`](../reference/index.qmd#calibratellr) | the same four forms |
+
+Rows with missing parameters are dropped with a warning. A frame whose column
+names are neither recognised parameter names nor parseable as numbers raises
+`ValueError`.
+
+## References
+
+::: {#refs}
+:::

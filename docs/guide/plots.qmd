@@ -1,0 +1,201 @@
+---
+title: "Plot gallery"
+subtitle: "All ten plotting functions, and what each is for"
+---
+
+Every plotting function returns a `matplotlib.figure.Figure`. Signatures,
+colours, breaks and labels follow the R package; only the object type differs
+(matplotlib rather than ggplot2).
+
+Passing `fileName=` saves the figure at the R package's dimensions and DPI:
+
+```python
+ec.plotCalibrationEffect(..., fileName="calibration.png")
+```
+
+```{python}
+import numpy as np
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+positive = sccs[sccs.groundTruth == 1]
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+
+southworth = ec.datasets.southworthReplication()
+controls = southworth[southworth.trueLogRr.notna()]
+```
+
+## Diagnosing the null
+
+### `plotCalibrationEffect`
+
+The workhorse. Estimates plotted against their standard errors, with two
+rejection regions drawn on top: the orange region is where the **calibrated**
+test declares significance, and the grey dashed boundary is where the
+**traditional** test does. Any negative control inside the dashed boundary is a
+false positive of the uncalibrated test.
+
+```{python}
+#| fig-cap: "Negative controls (blue) and the estimate of interest (yellow diamond)."
+fig = ec.plotCalibrationEffect(
+    negatives.logRr, negatives.seLogRr,
+    positive.logRr, positive.seLogRr,
+    showExpectedAbsoluteSystematicError=True,
+)
+```
+
+Useful arguments: `showCis=True` overlays confidence intervals; `null=` supplies
+a pre-fitted null (including an `McmcNull`); `xLimits`/`yLimits` control the
+axes, warning when data fall outside them.
+
+### `plotCalibration`
+
+The fraction of controls with p below $\alpha$, plotted against $\alpha$. The
+solid line ("Empirical") is calibrated, the dash-dot line ("Theoretical") is
+not, and the faint diagonal is the uniform ideal. A calibrated curve on the
+diagonal is what you want. The calibration is leave-one-out internally, so this
+is an honest check.
+
+```{python}
+#| fig-cap: "Observed versus expected p-value distribution for the negative controls."
+fig = ec.plotCalibration(negatives.logRr, negatives.seLogRr)
+```
+
+### `plotExpectedType1Error`
+
+Turns the fitted null into the realised type I error rate as a function of
+precision. The counter-intuitive upward slope toward small standard errors is
+the central problem with large observational studies.
+
+```{python}
+#| fig-cap: "Expected type 1 error under the empirical null; dashed line is nominal alpha."
+fig = ec.plotExpectedType1Error(
+    negatives.logRr, negatives.seLogRr,
+    seLogRrPositives=positive.seLogRr, alpha=0.05,
+)
+```
+
+`showEffectSizes=True` returns a two-panel figure adding the effect sizes that
+would be needed to reach significance.
+
+### `plotMcmcTrace`
+
+Diagnostics for an MCMC null: traces for the mean and the precision.
+
+```{python}
+#| fig-cap: "MCMC trace. Look for a stationary band with no drift."
+ec.set_seed(1)
+mcmc_null = ec.fitMcmcNull(negatives.logRr, negatives.seLogRr, iter=10_000)
+fig = ec.plotMcmcTrace(mcmc_null)
+```
+
+## Confidence interval calibration
+
+### `plotErrorModel`
+
+The fitted systematic error model — one panel per true effect size, showing the
+error distribution the model predicts against the controls observed there.
+
+```{python}
+#| fig-cap: "Fitted systematic error model."
+fig = ec.plotErrorModel(controls.logRr, controls.seLogRr, controls.trueLogRr)
+```
+
+### `plotCiCoverage`
+
+Coverage against nominal width, by true effect size, from leave-one-out
+evaluation. The single most informative check that calibration is doing what it
+claims.
+
+```{python}
+#| fig-cap: "Coverage of traditional versus calibrated intervals."
+ec.set_seed(1)
+evaluation = ec.evaluateCiCalibration(
+    controls.logRr, controls.seLogRr, controls.trueLogRr
+)
+fig = ec.plotCiCoverage(evaluation=evaluation)
+```
+
+Pass either raw `logRr`/`seLogRr`/`trueLogRr` (it will run the evaluation) or a
+precomputed `evaluation=` frame — the latter if you are drawing several plots
+from one expensive evaluation, as here.
+
+### `plotCiCalibration`
+
+Estimates and their intervals, calibrated and not, against the truth.
+
+```{python}
+#| fig-cap: "Calibrated and uncalibrated intervals for the controls."
+fig = ec.plotCiCalibration(evaluation=evaluation)
+```
+
+### `plotCiCalibrationEffect`
+
+The effect of calibration in the estimate/standard-error plane, with the
+systematic error model's implied regions.
+
+```{python}
+#| fig-cap: "Where calibration moves estimates."
+fig = ec.plotCiCalibrationEffect(
+    controls.logRr, controls.seLogRr, controls.trueLogRr
+)
+```
+
+## Presenting results
+
+### `plotForest`
+
+A forest plot of estimates with names. Ordinary presentation, but it takes the
+package's log-scale inputs directly.
+
+```{python}
+#| fig-cap: "Forest plot of the first ten negative controls."
+subset = negatives.head(10)
+fig = ec.plotForest(subset.logRr, subset.seLogRr, subset.drugName)
+```
+
+### `plotTrueAndObserved`
+
+For simulation studies: observed estimates against the true effect sizes that
+generated them.
+
+```{python}
+#| fig-cap: "True versus observed effect sizes."
+fig = ec.plotTrueAndObserved(
+    controls.logRr, controls.seLogRr, controls.trueLogRr
+)
+```
+
+## Styling and saving
+
+The figures are ordinary matplotlib objects, so adjust them freely:
+
+```{python}
+#| fig-cap: "The same plot with a title and a tightened layout."
+fig = ec.plotCalibration(negatives.logRr, negatives.seLogRr,
+                         title="SCCS negative controls")
+fig.set_size_inches(6, 4)
+fig.tight_layout()
+```
+
+To save at the R package's own dimensions, use `fileName=` rather than
+`fig.savefig`, since that path sets the size and DPI to match:
+
+```python
+ec.plotCalibration(negatives.logRr, negatives.seLogRr,
+                   fileName="calibration.png")
+```
+
+Working non-interactively (in a script or CI), select a non-GUI backend before
+importing:
+
+```python
+import matplotlib
+matplotlib.use("Agg")
+```
+
+## See also
+
+- [Getting started](getting-started.qmd)
+- [Reference](../reference/index.qmd#plots)

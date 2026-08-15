@@ -1,0 +1,204 @@
+---
+title: "Sequential surveillance with MaxSPRT"
+subtitle: "Critical values, calibrated LLRs, and a worked pipeline"
+---
+
+The theory is on the [MaxSPRT](../methods/maxsprt.qmd) page. This one runs an
+analysis.
+
+```{python}
+import numpy as np
+import pandas as pd
+import empiricalcalibration as ec
+```
+
+## Critical values
+
+The threshold depends on the schedule of looks, expressed as the expected number
+of events under the null in each group.
+
+```{python}
+#| warning: false
+groupSizes = [1.0] * 10          # ten looks, one expected event each
+
+ec.set_seed(1)
+cv = ec.computeCvPoisson(groupSizes, alpha=0.05, sampleSize=10_000)
+print(f"critical value: {float(cv):.4f}")
+print(f"alpha achieved: {cv.alpha}")
+```
+
+::: {.callout-note}
+## Read `cv.alpha`, always
+
+There is usually no critical value that hits the requested alpha exactly. These
+functions pick the least conservative value whose realised alpha is still below
+what you asked for, and report it. At `sampleSize=10_000` the granularity is
+coarse; at the default 1,000,000 it is fine.
+:::
+
+For a binomial (self-controlled or matched) design, supply `z` — the ratio of
+control to exposed, so the null probability is $p = 1/(1+z)$:
+
+```{python}
+#| warning: false
+ec.set_seed(2)
+cv_binom = ec.computeCvBinomial(groupSizes, z=4, sampleSize=10_000)
+print(f"binomial CV: {float(cv_binom):.4f}  (alpha {cv_binom.alpha})")
+```
+
+And for a Poisson regression design with a control window:
+
+```{python}
+#| warning: false
+ec.set_seed(3)
+cv_reg = ec.computeCvPoissonRegression(groupSizes, z=4, sampleSize=10_000)
+print(f"Poisson regression CV: {float(cv_reg):.4f}  (alpha {cv_reg.alpha})")
+```
+
+### Accounting for systematic error in the threshold
+
+Pass `nullMean` and `nullSd` from a fitted empirical null, and each simulated
+trial draws its own systematic error rather than assuming none:
+
+```{python}
+#| warning: false
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+
+ec.set_seed(1)
+cv_cal = ec.computeCvPoisson(groupSizes, sampleSize=10_000,
+                             nullMean=null[0], nullSd=null[1])
+
+print(f"uncalibrated CV: {float(cv):.3f}")
+print(f"calibrated CV:   {float(cv_cal):.3f}")
+```
+
+::: {.callout-warning}
+## Budget the runtime
+
+The examples here use `sampleSize=10_000` so this page renders quickly. The
+default is 1,000,000 and takes seconds to tens of seconds per call. Use the
+default for anything you report — the Monte-Carlo error in the critical value is
+part of your error budget, and 10,000 samples is not enough to pin a 95%
+quantile.
+:::
+
+## Calibrating the statistic
+
+`calibrateLlr` takes the null and a likelihood approximation for the estimate
+under test.
+
+```{python}
+positive = sccs[sccs.groundTruth == 1]
+llr = ec.calibrateLlr(null, positive)
+print("calibrated LLR:", llr[0], " -> signal?", bool(llr[0] > float(cv_cal)))
+```
+
+Zero: once the design's demonstrated systematic error is accounted for, this
+estimate carries no evidence against the null.
+
+With grid likelihood profiles instead of normal approximations — the right
+choice when event counts are small:
+
+```{python}
+from empiricalcalibration._rmath import dnorm
+
+ec.set_seed(123)
+sim = ec.simulateControls(n=50, mean=0.2, sd=0.2, trueLogRr=0, seLogRr=0.1)
+point = np.linspace(np.log(0.1), np.log(10), 1000)
+profiles = [
+    pd.DataFrame({"point": point,
+                  "value": dnorm(point, sim.logRr.iloc[i], sim.seLogRr.iloc[i])})
+    for i in range(len(sim))
+]
+
+grid_null = ec.fitNullNonNormalLl(profiles)
+ec.calibrateLlr(grid_null, profiles[:5]).round(4)
+```
+
+## A full pipeline on simulated data
+
+`simulateMaxSprtData` produces a multi-look dataset with negative controls, a
+positive control, and a systematic error built in.
+
+```{python}
+ec.set_seed(42)
+data = ec.simulateMaxSprtData(
+    n=10_000,
+    numberOfNegativeControls=20,
+    numberOfPositiveControls=1,
+    looks=10,
+)
+data.head()
+```
+
+Compute a per-look, per-outcome Poisson rate ratio against unexposed time, then
+run the calibration at the final look.
+
+```{python}
+def estimate_at_look(df, look):
+    """Crude Poisson rate-ratio estimate per outcome at a given look."""
+    d = df[df.lookTime == look]
+    rows = []
+    for outcome_id, g in d.groupby("outcomeId"):
+        exposed = g[g.exposure == 1]
+        unexposed = g[g.exposure == 0]
+        a, b = exposed.outcome.sum(), unexposed.outcome.sum()
+        t1, t0 = exposed.time.sum(), unexposed.time.sum()
+        if a == 0 or b == 0:
+            rows.append((outcome_id, np.nan, np.nan))
+            continue
+        logRr = np.log((a / t1) / (b / t0))
+        seLogRr = np.sqrt(1 / a + 1 / b)
+        rows.append((outcome_id, logRr, seLogRr))
+    return pd.DataFrame(rows, columns=["outcomeId", "logRr", "seLogRr"])
+
+final_look = sorted(data.lookTime.unique())[-1]
+est = estimate_at_look(data, final_look).dropna()
+est.head()
+```
+
+```{python}
+# Outcome IDs are assigned negative controls first, so the positive control
+# takes the highest ID.
+positive_id = est.outcomeId.max()
+neg_est = est[est.outcomeId != positive_id]
+pos_est = est[est.outcomeId == positive_id]
+
+sim_null = ec.fitNull(neg_est.logRr, neg_est.seLogRr)
+print(sim_null)
+print()
+print("EASE:", round(float(ec.computeExpectedAbsoluteSystematicError(sim_null)), 3))
+```
+
+```{python}
+#| warning: false
+llr_cal = ec.calibrateLlr(sim_null, pos_est[["logRr", "seLogRr"]])
+
+ec.set_seed(9)
+cv_final = ec.computeCvPoisson([1.0] * 10, sampleSize=10_000,
+                               nullMean=sim_null[0], nullSd=sim_null[1])
+
+print(f"calibrated LLR : {llr_cal[0]:.3f}")
+print(f"critical value : {float(cv_final):.3f}")
+print(f"signal         : {bool(llr_cal[0] > float(cv_final))}")
+```
+
+## Choosing a design by EASE
+
+When several designs are available, run each on the same negative controls and
+prefer the one with least systematic error — see
+[EASE](../methods/ease.qmd#comparing-two-designs) for the paired comparison that
+respects the shared controls.
+
+```python
+result = ec.compareEase(designA.logRr, designA.seLogRr,
+                        designB.logRr, designB.seLogRr)
+```
+
+## See also
+
+- [MaxSPRT methods](../methods/maxsprt.qmd)
+- [Non-normal likelihoods](../methods/likelihood-approximations.qmd) — important for small event counts
+- [EASE](../methods/ease.qmd)

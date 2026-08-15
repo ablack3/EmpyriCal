@@ -1,0 +1,194 @@
+---
+title: "MaxSPRT and calibrated surveillance"
+subtitle: "Sequential testing that accounts for systematic error"
+---
+
+## The setting
+
+Vaccine and drug safety surveillance does not wait for the data to be complete.
+Data accrue over time, and the analysis is repeated at every look — weekly,
+monthly — with the intention of signalling as soon as there is evidence of harm.
+Testing repeatedly inflates the type I error unless the test is designed for it.
+
+The **maximised sequential probability ratio test** [@kulldorff2011] is the
+standard answer. At each look, compute
+
+$$
+\mathrm{LLR} \;=\; \log \frac{L(\hat\beta)}{L(\beta_0)} \;=\; \ell(\hat\beta) - \ell(\beta_0),
+$$
+
+the log ratio of the likelihood at its maximum to the likelihood at the null,
+truncated to zero when $\hat\beta < \beta_0$ so the test is one-sided. Signal
+the first time $\mathrm{LLR}$ exceeds a critical value $\mathrm{CV}$ chosen so
+that
+
+$$
+\Pr\!\left(\max_{k}\ \mathrm{LLR}_k \;\ge\; \mathrm{CV} \;\middle|\; H_0\right) \;=\; \alpha
+$$
+
+across the whole sequence of looks. The maximum over looks is what makes this a
+*family-wise* guarantee rather than a per-look one.
+
+And it is a guarantee about random error only. Surveillance runs on the same
+observational data as everything else, with the same confounding, so the real
+type I error is nothing like $\alpha$. There are two independent places to fix
+that, and this package implements both.
+
+## Fix 1: calibrate the statistic
+
+Rather than comparing the observed LLR to a null at exactly $\beta_0$, compare
+it to the **empirical null** — averaging the evidence over the plausible true
+effects the design's systematic error could be manufacturing.
+
+The route runs through p-values, because they are what averages sensibly. For a
+one-sided test, Wilks' theorem gives $2\,\mathrm{LLR} \sim \chi^2_1$ under the
+null, halved for one-sidedness:
+
+$$
+p \;=\; \tfrac{1}{2}\left(1 - F_{\chi^2_1}\!\left(2\,\mathrm{LLR}\right)\right),
+\qquad
+\mathrm{LLR} \;=\; \tfrac{1}{2} F^{-1}_{\chi^2_1}\!\left(1 - 2p\right).
+$$
+
+These are `computePFromLlr` and `computeLlrFromP`, and they are exact inverses.
+Both switch to log-linear extrapolation in the extreme tail, where the $\chi^2$
+routines return exactly 0 or $\infty$ — above $\mathrm{LLR} = 33$ and below
+$p = 10^{-16}$ respectively.
+
+With that bridge, the calibrated statistic is:
+
+::: {.keyresult}
+$$
+p_{\text{cal}} \;=\; \int_{-\infty}^{\infty}
+p\Big(\ell(\hat\beta) - \ell(x)\Big)\ \phi(x; \mu, \sigma)\ dx,
+\qquad
+\mathrm{LLR}_{\text{cal}} \;=\; \tfrac{1}{2} F^{-1}_{\chi^2_1}\!\left(1 - 2\,p_{\text{cal}}\right).
+$$
+:::
+
+Read the integral as: for each candidate true effect $x$ that the empirical null
+says the systematic error could be producing, compute the p-value you would get
+if $x$ were the truth, and average those weighted by how plausible $x$ is.
+`calibrateLlr` evaluates it numerically over $\mu \pm 10\sigma$. When
+$\sigma < 0.001$ the integral degenerates and the LLR at $x = \mu$ is returned
+directly.
+
+```{python}
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+positive = sccs[sccs.groundTruth == 1]
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+llr_cal = ec.calibrateLlr(null, positive)
+print("calibrated LLR:", llr_cal[0])
+```
+
+The calibrated LLR is zero: once the design's systematic error is accounted for,
+this estimate carries no evidence against the null at all. The uncalibrated
+statistic would have been large.
+
+`calibrateLlr` accepts the same [likelihood
+approximations](likelihood-approximations.qmd) as `fitNullNonNormalLl` — normal,
+custom, skew-normal or grid — which matters here because surveillance signals
+on small event counts where the normal approximation is poorest. It also accepts
+an `McmcNull`, returning `llr`, `ci95Lb` and `ci95Ub`.
+
+## Fix 2: calibrate the threshold
+
+The other lever is the critical value. Instead of computing CV under a null that
+assumes no systematic error, simulate under the **empirical** null: every
+simulated trial draws its own systematic error $\exp(N(\mu, \sigma^2))$ and
+applies it as a multiplier on the expected event counts. The resulting CV is
+larger, and it delivers the nominal $\alpha$ against the error the design
+actually has.
+
+The three functions differ in the data-generating model:
+
+| Function | Model | Key argument |
+|---|---|---|
+| `computeCvPoisson` | Poisson counts against a historical comparator | `groupSizes` = expected events under $H_0$ |
+| `computeCvBinomial` | Binomial, self-controlled or matched | `z` = control-to-case ratio, so $p = 1/(1+z)$ |
+| `computeCvPoissonRegression` | Poisson regression with a control window | `z` = control time / time at risk |
+
+All three are Monte Carlo: simulate `sampleSize` trials under the null, record
+the running maximum LLR across looks in each, and take the appropriate quantile.
+
+```{python}
+#| warning: false
+# Ten monthly looks, one expected event per month under the null.
+groupSizes = [1.0] * 10
+
+ec.set_seed(1)
+cv_plain = ec.computeCvPoisson(groupSizes, sampleSize=10_000)
+
+ec.set_seed(1)
+cv_calibrated = ec.computeCvPoisson(groupSizes, sampleSize=10_000,
+                                    nullMean=null[0], nullSd=null[1])
+
+print(f"CV, no systematic error:   {float(cv_plain):.3f}  (alpha {cv_plain.alpha})")
+print(f"CV, empirical null:        {float(cv_calibrated):.3f}  (alpha {cv_calibrated.alpha})")
+```
+
+The threshold has to move a long way to hold the error rate against a design
+this biased. If you were running surveillance with the uncalibrated CV, you were
+operating at a far higher false-signal rate than the nominal 5%.
+
+::: {.callout-note}
+## Why `alpha` comes back different from what you asked for
+
+With a discrete number of Monte-Carlo samples there is generally no critical
+value achieving exactly $\alpha$. These functions choose the **least
+conservative** CV whose realised alpha is still below the requested one, and
+report what they achieved in `cv.alpha`. Always read it — with a small
+`sampleSize` the gap can be substantial.
+:::
+
+::: {.callout-warning}
+## These are the slow functions
+
+The default `sampleSize=1_000_000` takes several seconds to tens of seconds per
+call, against well under a second for the R package's C++. A vectorised path
+handles the common regime (every Poisson mean below 10, every binomial $np$
+below 30) and falls back to an exact scalar loop otherwise, so the answer is
+identical either way. Drop `sampleSize` for exploration; keep the default for
+anything you report, since the Monte-Carlo error in the CV is itself part of
+your error budget.
+:::
+
+## Putting both together
+
+A fully calibrated surveillance analysis uses both fixes: the calibrated LLR as
+the statistic, and a CV simulated under the empirical null as the threshold.
+`simulateMaxSprtData` generates a realistic multi-look dataset with negative and
+positive controls for developing and testing such a pipeline.
+
+```{python}
+ec.set_seed(42)
+data = ec.simulateMaxSprtData(n=1000, numberOfNegativeControls=5,
+                              numberOfPositiveControls=1)
+data.head()
+```
+
+Each row is a subject-outcome record; `lookTime` marks which sequential look it
+belongs to and `outcomeId` which control. The
+[MaxSPRT guide](../guide/maxsprt.qmd) works an analysis through end to end.
+
+## API
+
+| Function | Use |
+|---|---|
+| [`calibrateLlr(null, likelihoodApproximation)`](../reference/index.qmd#calibratellr) | Calibrated one-sided upper LLR. |
+| [`computeCvPoisson(groupSizes, ...)`](../reference/index.qmd#computecvpoisson) | Critical value, Poisson design. |
+| [`computeCvBinomial(groupSizes, z, ...)`](../reference/index.qmd#computecvbinomial) | Critical value, binomial design. |
+| [`computeCvPoissonRegression(groupSizes, z, ...)`](../reference/index.qmd#computecvpoissonregression) | Critical value, Poisson regression design. |
+| [`simulateMaxSprtData(...)`](../reference/index.qmd#simulatemaxsprtdata) | Simulated sequential surveillance data. |
+
+Only one-sided upper LLRs are supported; `twoSided=True` or `upper=False` raise
+`ValueError`, matching the R package.
+
+## References
+
+::: {#refs}
+:::

@@ -161,7 +161,9 @@ matches R either way. Lower `sampleSize` if you need speed over precision.
 python -m pytest -q
 ```
 
-The `computeCv*` Monte-Carlo checks are marked `slow`; skip them for a fast loop:
+The million-sample `computeCv*` Monte-Carlo checks and the non-normal
+likelihood fits are marked `slow` — together they are most of the runtime. Skip
+them for a fast loop:
 
 ```bash
 python -m pytest -q -m "not slow"

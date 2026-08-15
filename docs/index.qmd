@@ -1,0 +1,96 @@
+---
+title: "EmpiricalCalibration"
+subtitle: "Calibrating p-values and confidence intervals against what a study actually gets wrong"
+toc: false
+---
+
+Observational studies of healthcare data produce effect estimates with
+confidence intervals and p-values computed as though **random error were the
+only error**. It is not. Confounding, selection bias and measurement error add a
+*systematic* component that the standard error does not know about, and the
+result is inference that is far more confident than it deserves to be.
+
+Empirical calibration measures that systematic component instead of assuming it
+away. Run your study design on a set of **negative controls** — exposure–outcome
+pairs where the true effect is known to be null — and the spread of the
+estimates you get back is a direct, empirical picture of your study's error. The
+distribution fitted to those estimates is the *empirical null*, and p-values and
+confidence intervals evaluated against it carry the study's real uncertainty
+rather than its nominal one.
+
+::: {.keyresult}
+Traditional p-value: how surprising is this estimate **if the null is true and
+the study is unbiased**?
+
+Calibrated p-value: how surprising is this estimate **if the null is true and
+the study is as biased as it demonstrably is on things we know are null**?
+:::
+
+## Install
+
+```bash
+pip install git+https://github.com/ablack3/EmpyriCal.git
+```
+
+## Sixty seconds
+
+```{python}
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+positive = sccs[sccs.groundTruth == 1]
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+print(null)
+```
+
+The negative controls should have been centred on a log relative risk of 0 with
+no spread beyond their own standard errors. They are centred on 0.79 — a
+relative risk of `{python} round(float(__import__("numpy").exp(null[0])), 2)` —
+with a further 0.28 of standard deviation on top. That is this study design's
+systematic error, and every estimate it produces inherits it.
+
+```{python}
+print("traditional p:", ec.computeTraditionalP(positive.logRr, positive.seLogRr)[0])
+print("calibrated  p:", ec.calibrateP(null, positive.logRr, positive.seLogRr)[0])
+```
+
+The positive control — a drug–outcome pair with a *known* effect — goes from
+"certain" to "unremarkable". Read that as a statement about the study design,
+not about the drug: a design that finds this much signal in outcomes it should
+find nothing in cannot support a confident claim here either.
+
+```{python}
+#| fig-cap: "Blue dots are negative controls, the yellow diamond is the positive control. The grey dashed boundary encloses results the traditional test calls significant; the orange region is what the calibrated test calls significant. Negative controls inside either region are false positives."
+fig = ec.plotCalibrationEffect(
+    negatives.logRr, negatives.seLogRr,
+    positive.logRr, positive.seLogRr,
+)
+```
+
+## Where to go next
+
+| | |
+|---|---|
+| [Why calibrate](methods/why.qmd) | The evidence that nominal p-values are wrong in this setting, and what negative controls buy you. |
+| [The empirical null](methods/null-distribution.qmd) | The model, its likelihood, and how it is fitted. |
+| [P-value calibration](methods/p-values.qmd) | The closed form, and why it restores uniformity. |
+| [Confidence intervals](methods/confidence-intervals.qmd) | The systematic error model, positive controls, and root-finding for the bounds. |
+| [MaxSPRT](methods/maxsprt.qmd) | Calibrated sequential surveillance: LLR calibration and critical values. |
+| [Getting started](guide/getting-started.qmd) | A worked end-to-end analysis in code. |
+| [Coming from R](guide/from-r.qmd) | Line-by-line translation from the OHDSI R package. |
+
+## Provenance
+
+This package is a Python port of the OHDSI R package
+[EmpiricalCalibration](https://github.com/OHDSI/EmpiricalCalibration) v3.1.4 by
+Martijn Schuemie and Marc Suchard. Function names, arguments and defaults are
+unchanged, and the numerical results are verified against R — see
+[Validation](validation.qmd). The methods are those of @schuemie2014 and
+@schuemie2018.
+
+## References
+
+::: {#refs}
+:::

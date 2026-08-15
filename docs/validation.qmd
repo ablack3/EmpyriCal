@@ -1,0 +1,140 @@
+---
+title: "Validation against R"
+subtitle: "Why the numbers match, and where they do not"
+---
+
+The claim this port makes is not that it implements the same statistics as the
+OHDSI R package, but that it produces the **same numbers**. This page explains
+what that took and how far it holds.
+
+## Why not just use SciPy?
+
+The obvious implementation reaches for `scipy.optimize.minimize`,
+`scipy.integrate.quad` and `numpy.random`. Doing so produces results that are
+statistically equivalent and numerically different — typically in the third or
+fourth decimal place, occasionally more when an optimiser lands in a different
+basin.
+
+For a package whose output is a p-value that someone will compare against 0.05,
+and for a port that people will want to check against an existing R analysis,
+that is not good enough. So the R-specific numerical machinery was ported
+directly:
+
+| Component | What it replaces | Why |
+|---|---|---|
+| `_roptim.nmmin` | `scipy.optimize.minimize(method="Nelder-Mead")` | R's Nelder–Mead uses different convergence criteria and lands 3–4 decimals away. |
+| `_roptim.vmmin` | `method="BFGS"` | R's BFGS with R's finite-difference gradient (`ndeps = 1e-3`), not an analytic one. |
+| `_roptim.optimhess` | `scipy` Hessian | R's finite-difference Hessian, for `estimateCovarianceMatrix=True`. |
+| `_roptim.uniroot` | `scipy.optimize.brentq` | R's Brent `zeroin` with `tol = eps^0.25` — a much looser tolerance than SciPy's default. |
+| `_rintegrate.integrate` | `scipy.integrate.quad` | QUADPACK at R's tolerances (`1.22e-4`), not SciPy's (`1.49e-8`). |
+| `_rrng` | `numpy.random` | R's Mersenne-Twister, `set.seed` scrambling, inversion-method normals, `rpois`, `rbinom`, and `R_unif_index` rejection sampling. |
+| `_rmath.dnorm/dpois/dbinom` | `scipy.stats` | R's `nmath`, including Loader's saddle-point algorithm; SciPy differs by up to 2.4e-13. |
+
+## The gold standard
+
+Verification is against **R 4.6.1 with EmpiricalCalibration 3.1.4**, on 56
+checkpoints covering every exported function. The generator script and the
+recorded values live in the repository:
+
+```
+extras/r-parity/generate_r_gold_standard.R   # run in R, writes gold.json
+extras/r-parity/gold.json                    # the recorded R values
+extras/r-parity/compare_to_r.py              # compares the port against them
+```
+
+## Results
+
+| Agreement | Functions |
+|---|---|
+| **Bit-identical** (exactly 0 difference) | `fitNull`, `fitNullNonNormalLl`, `convertNullToErrorModel`, `computeTraditionalP`, `computeTraditionalCi`, `computeExpectedAbsoluteSystematicError`, `evaluateCiCalibration`, `compareEase`, all three `computeCv*` critical values, `simulateMaxSprtData`, the MCMC starting state, and all five packaged datasets |
+| **~1e-15** | `calibrateLlr`, `computePFromLlr` / `computeLlrFromP`, `fitMcmcNull` posterior summaries, `calibrateP` under an MCMC null, the raw MaxSPRT samplers |
+| **~1e-13** | `calibrateConfidenceInterval` (Brent root-finding at `tol = eps^0.25`), `simulateControls` |
+| **~3e-10** | `fitSystematicErrorModel`, especially its covariance matrix |
+
+The 3e-10 entry is the largest and has a clear cause: BFGS accumulates through
+finite-difference gradients, and finite differencing amplifies last-ulp
+differences in the objective by roughly `1/ndeps`. Over the iterations of a
+four-parameter fit that compounds into the tenth decimal. It is not a defect in
+either implementation — it is what optimisation through numerical derivatives
+does with inputs that differ in their final bit.
+
+## Random numbers
+
+`ec.set_seed(n)` reproduces R's `set.seed(n)` stream, so stochastic functions
+agree run-for-run rather than merely in distribution.
+
+The raw draws are **bit-identical** to R's: `unif_rand`, `rpois`, `rbinom` and
+`sample.int`. This is asserted directly in the test suite:
+
+```{python}
+from empiricalcalibration._rrng import RRandom
+
+# R: set.seed(101); runif(5)
+print(RRandom(101).runif(5))
+
+# R: set.seed(123); rpois(6, 3.7)
+print(RRandom(123).rpois_n(6, 3.7))
+
+# R: set.seed(3); sample.int(45, 8, replace = TRUE)
+print(RRandom(3).sample_int(45, 8))
+```
+
+Two derived quantities differ in the last bits, for reasons worth stating
+precisely:
+
+**Normal draws** differ by at most 1 ulp. R's `qnorm` uses the AS 241 rational
+approximation, which rounds differently in the final bit from the port's
+evaluation of the same polynomial.
+
+**Values of the form `mu + sigma * z` or `a + (b - a) * u`** differ by ~1e-14
+relative. R's C compiler contracts those expressions into a fused multiply-add
+on this platform, computing them with a single rounding; NumPy rounds the
+multiply and the add separately. This is why `simulateControls` appears at ~1e-13
+rather than bit-identical even though its underlying uniform stream matches
+exactly.
+
+## The test suite
+
+The suite is ported from the R package's `testthat` suite and extended with
+regression tests that pin values produced by R, plus coverage of the ported
+numerics, the datasets, the result classes and scalar-argument handling.
+
+```bash
+python -m pytest -q                  # everything
+python -m pytest -q -m "not slow"    # skip the expensive Monte-Carlo and
+                                     # non-normal-likelihood fits
+```
+
+The suite includes explicit R-parity assertions rather than only checking
+statistical properties. For example:
+
+```python
+def test_fitNull_reproduces_r(sccs):
+    """Bit-exact against R 4.6.1 EmpiricalCalibration 3.1.4."""
+    negatives = sccs[sccs.groundTruth == 0]
+    null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+    assert null[0] == 0.79215805192387778
+    assert null[1] == 0.28343634583577032
+```
+
+Note `==` rather than `approx`: for the functions listed as bit-identical above,
+any deviation at all is a regression.
+
+## Scope of the guarantee
+
+These comparisons were made on macOS on arm64 with a particular R and BLAS
+build. The bit-identical results depend on IEEE 754 double arithmetic and on
+both implementations evaluating operations in the same order, which the ports
+are written to ensure. What they do not control is the platform's own
+floating-point behaviour — most notably compiler contraction of multiply-add,
+which is exactly the effect visible in the normal-draw discrepancy above. On a
+different platform, expect the bit-identical column to become "agreeing to
+~1e-15" rather than to break.
+
+## Known deliberate differences
+
+These are design decisions, not deviations, and are listed in full on
+[Coming from R](guide/from-r.qmd#deliberate-differences): matplotlib figures
+instead of ggplot objects, `cohortMethod.groundTruth` as an integer rather than
+a factor, `None` defaults instead of R missing arguments, Python exceptions
+instead of `stop()`, and `print()` instead of `message()`.

@@ -1,0 +1,161 @@
+---
+title: "Bayesian null fitting with MCMC"
+subtitle: "Credible intervals for a calibrated p-value"
+---
+
+## The uncertainty the point estimate hides
+
+`fitNull` returns a single $(\hat\mu, \hat\sigma)$, and `calibrateP` then treats
+those two numbers as if they were known. They are not — they are estimated from
+a few dozen negative controls, and as the simulation on the
+[empirical null](null-distribution.qmd#what-the-number-of-controls-buys-you)
+page shows, that estimate can be loose.
+
+A calibrated p-value of 0.04 computed from a null fitted on 20 controls and one
+fitted on 200 are not the same claim, but nothing in the output distinguishes
+them. `fitMcmcNull` samples the posterior of $(\mu, \tau)$ instead of maximising
+the likelihood, so that uncertainty propagates all the way through to a credible
+interval on the p-value itself.
+
+## The posterior
+
+Parameterise by the precision $\tau = 1/\sigma^2$. The likelihood is the one
+from the [empirical null](null-distribution.qmd#the-likelihood):
+
+$$
+L(\mu, \tau) \;=\; \prod_{i=1}^{n}
+\phi\!\left(\hat\beta_i \;;\; \mu,\ \sqrt{\tau^{-1} + \hat\sigma_i^2}\right).
+$$
+
+The priors are deliberately weak — the intent is to report the information in
+the controls, not to add to it:
+
+$$
+\pi(\mu) \;\propto\; 1,
+\qquad
+\tau \;\sim\; \mathrm{Gamma}\!\left(10^{-4},\, 10^{-4}\right),
+$$
+
+a flat prior on the mean and the standard near-improper gamma on the precision
+(mean 1, variance $10^{4}$). The log posterior is therefore the log likelihood
+plus $\log \mathrm{Gamma}(\tau; 10^{-4}, 10^{-4})$, which is what
+`logLikelihoodNullMcmc` computes.
+
+## The sampler
+
+A Metropolis random walk with a symmetric normal proposal, so the acceptance
+ratio is just the posterior ratio:
+
+$$
+\alpha \;=\; \min\!\left(1,\ \frac{\pi(\mu', \tau' \mid \text{data})}{\pi(\mu, \tau \mid \text{data})}\right).
+$$
+
+Two implementation details worth knowing:
+
+**The precision is reflected, not rejected.** A proposal with $\tau' < 0$ is
+replaced by $\lvert\tau'\rvert$ rather than discarded. Reflection at a boundary
+preserves the symmetry of the proposal, so the Metropolis ratio stays valid.
+
+**The proposal scale is set by profile likelihood, not tuned by hand.** Before
+sampling, the chain starts from the posterior mode (found by the same
+Nelder–Mead used in `fitNull`), and the step size for each parameter is set to
+the distance from the mode at which the profile log-likelihood has dropped by
+$\tfrac{1}{2}\chi^2_{1}(0.9) \approx 1.35$ — located by binary search. That is a
+cheap proxy for the posterior's own scale in each direction, and it means the
+sampler adapts to the data rather than to a default.
+
+```{python}
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+
+ec.set_seed(123)
+null = ec.fitMcmcNull(negatives.logRr, negatives.seLogRr, iter=100_000)
+print(null)
+```
+
+Note what the printed object reports: the posterior median of the mean, and the
+posterior median of the **precision** — not the standard deviation. To get
+$\sigma$, take $1/\sqrt{\tau}$.
+
+```{python}
+import numpy as np
+
+chain = null.mcmc["chain"]
+sigma = 1 / np.sqrt(chain[:, 1])
+print(f"posterior median sigma: {np.median(sigma):.3f}")
+print(f"95% credible interval:  {np.quantile(sigma, 0.025):.3f} - "
+      f"{np.quantile(sigma, 0.975):.3f}")
+print(f"acceptance rate:        {float(np.mean(null.mcmc['acc'])):.2f}")
+```
+
+## Checking the chain
+
+An acceptance rate near the 0.2–0.5 range and traces that mix without drift are
+the minimum bar. `plotMcmcTrace` shows both parameters:
+
+```{python}
+#| fig-cap: "Trace of the mean and precision. Look for a stationary band with no trend and no long flat stretches."
+fig = ec.plotMcmcTrace(null)
+```
+
+::: {.callout-warning}
+## No burn-in is discarded
+
+`fitMcmcNull` returns the entire chain including its first iterations, and the
+posterior summaries are quantiles over all of it. This follows the R package's
+behaviour exactly. Because the chain is started at the posterior mode rather
+than at an arbitrary point, the burn-in problem is much reduced — but if you
+want to be careful, summarise `null.mcmc["chain"]` yourself after dropping the
+first few thousand rows.
+:::
+
+## Calibrating against it
+
+Pass the `McmcNull` to `calibrateP`. The calibration formula is applied once per
+posterior draw, and the result is summarised by its median and 2.5%/97.5%
+quantiles:
+
+```{python}
+positive = sccs[sccs.groundTruth == 1]
+ec.calibrateP(null, positive.logRr, positive.seLogRr)
+```
+
+The interval is a **credible interval for the calibrated p-value** — the range
+of p-values consistent with the posterior uncertainty about the null. A wide one
+is a signal that you do not have enough negative controls to make a confident
+calibrated claim in either direction.
+
+Passing `pValueOnly=True` returns just the median p-values as an array, matching
+`calibrateP` on a plain `Null`.
+
+The same posterior propagates into the [EASE](ease.qmd) summary and into
+[LLR calibration](maxsprt.qmd), both of which accept an `McmcNull` and return
+intervals rather than points.
+
+## Cost
+
+The default is 100,000 iterations, each requiring a full pass over the negative
+controls. This is the slowest of the fitting routines by a wide margin — seconds
+to tens of seconds where `fitNull` is instantaneous. For exploratory work
+`iter=10_000` is usually enough to see whether the credible interval is wide or
+narrow; keep the default for anything you report.
+
+Because the sampler draws from a port of R's Mersenne-Twister,
+`ec.set_seed(n)` reproduces R's `set.seed(n)` stream exactly, so a given seed
+gives the same chain in both languages — see [Validation](../validation.qmd).
+
+## API
+
+| Function | Use |
+|---|---|
+| [`fitMcmcNull(logRr, seLogRr, iter=100000)`](../reference/index.qmd#fitmcmcnull) | Sample the posterior; returns an `McmcNull`. |
+| [`calibrateP(mcmcNull, ...)`](../reference/index.qmd#calibratep) | Calibrated p-value with a credible interval. |
+| [`plotMcmcTrace(mcmcNull)`](../reference/index.qmd#plotmcmctrace) | Trace plots for both parameters. |
+| `null.mcmc["chain"]` | The raw $(\mu, \tau)$ draws, for your own summaries. |
+
+## References
+
+::: {#refs}
+:::

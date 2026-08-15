@@ -1,0 +1,180 @@
+---
+title: "P-value calibration"
+subtitle: "One closed form, and why it restores uniformity"
+---
+
+## The calibrated p-value
+
+The [empirical null](null-distribution.qmd) says that under the null hypothesis,
+an estimate from this study design is distributed as
+
+$$
+\hat\beta \;\sim\; N\!\left(\mu,\ \sigma^2 + \hat\sigma^2\right).
+$$
+
+A p-value is the probability, under the null, of an estimate at least as extreme
+as the one observed. So substitute that null for the theoretical one and read
+off the tail probability. For a new estimate $\hat\beta$ with standard error
+$\hat\sigma$:
+
+::: {.keyresult}
+$$
+p_{\text{upper}} \;=\; \Phi\!\left(\frac{\mu - \hat\beta}{\sqrt{\sigma^2 + \hat\sigma^2}}\right),
+\qquad
+p_{\text{lower}} \;=\; \Phi\!\left(\frac{\hat\beta - \mu}{\sqrt{\sigma^2 + \hat\sigma^2}}\right),
+$$
+$$
+p_{\text{two-sided}} \;=\; 2\,\min\!\left(p_{\text{upper}},\, p_{\text{lower}}\right).
+$$
+:::
+
+No simulation, no iteration — it is one call to the normal CDF. `calibrateP`
+computes exactly this, and returns `nan` for any input with a missing or
+infinite `logRr` or `seLogRr`.
+
+Setting $\mu = 0$ and $\sigma = 0$ recovers the traditional p-value
+$2\Phi(-\lvert\hat\beta\rvert / \hat\sigma)$, which is a useful sanity check and
+a real special case: a design with no measurable systematic error is calibrated
+to itself.
+
+```{python}
+import empiricalcalibration as ec
+
+null_degenerate = ec.Null(0, 0)
+print("calibrated under a degenerate null:",
+      ec.calibrateP(null_degenerate, 0.2, 0.2)[0])
+print("traditional:                      ",
+      ec.computeTraditionalP(0.2, 0.2))
+```
+
+## Why this restores uniformity
+
+The property a p-value must have is that it is **uniform on $[0,1]$ when the
+null hypothesis is true**. That is what makes "reject below 0.05" a test with a
+5% type I error rate. The traditional p-value loses this property in the
+presence of systematic error; the calibrated one recovers it, and the argument
+is two lines.
+
+Take a hypothesis for which the null is true, drawn from the same population of
+hypotheses as the controls. By assumption its systematic error is
+$\epsilon \sim N(\mu, \sigma^2)$, so
+
+$$
+\hat\beta \;\sim\; N\!\left(\mu,\ \sigma^2 + \hat\sigma^2\right)
+\quad\Longrightarrow\quad
+Z \;=\; \frac{\hat\beta - \mu}{\sqrt{\sigma^2 + \hat\sigma^2}} \;\sim\; N(0,1).
+$$
+
+The calibrated one-sided p-value is $\Phi(-Z)$ — a continuous CDF applied to its
+own random variable — and by the probability integral transform that is exactly
+$\mathrm{Uniform}(0,1)$. The two-sided version is uniform by the same argument
+applied to $\lvert Z \rvert$.
+
+So calibration is not a heuristic adjustment. Given the model, uniformity under
+the null is a theorem. What is *not* guaranteed is the model: the assumption
+doing the work is that the hypothesis of interest draws its systematic error
+from the same distribution as the controls, and $(\mu, \sigma)$ are estimated
+from a finite sample of them.
+
+### Seeing it
+
+Leave each negative control out, calibrate it against a null fitted on the
+others, and the resulting p-values should be uniform — so their empirical CDF
+should track the diagonal.
+
+```{python}
+#| fig-cap: "Empirical CDF of p-values for negative controls, leave-one-out. Uniform p-values track the diagonal."
+import numpy as np
+import matplotlib.pyplot as plt
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+neg = sccs[sccs.groundTruth == 0].reset_index(drop=True)
+
+trad, calib = [], []
+for i in range(len(neg)):
+    others = neg.drop(index=i)
+    fit = ec.fitNull(others.logRr, others.seLogRr)
+    calib.append(ec.calibrateP(fit, neg.logRr[i], neg.seLogRr[i])[0])
+    trad.append(ec.computeTraditionalP(neg.logRr[i], neg.seLogRr[i]))
+
+fig, ax = plt.subplots(figsize=(5, 4.6))
+grid = np.linspace(0, 1, 200)
+for vals, label, colour in [(trad, "traditional", "crimson"),
+                            (calib, "calibrated", "#1f4e79")]:
+    ax.step(grid, [np.mean(np.asarray(vals) <= g) for g in grid],
+            where="post", label=label, color=colour, lw=2)
+ax.plot([0, 1], [0, 1], ls="--", color="grey", lw=1, label="uniform")
+ax.set_xlabel("p-value"); ax.set_ylabel("fraction of negative controls below")
+ax.legend(frameon=False); ax.set_aspect("equal")
+fig.tight_layout()
+```
+
+```{python}
+for name, vals in [("traditional", trad), ("calibrated", calib)]:
+    print(f"{name:>12}: {np.mean(np.asarray(vals) < 0.05):.0%} below 0.05 "
+          f"(should be 5%)")
+```
+
+The traditional curve leaves the diagonal immediately — far too many controls
+get small p-values. The calibrated curve is close to uniform, which is the
+guarantee restored.
+
+::: {.callout-important}
+## Leave-one-out is not optional here
+
+If you fit the null on all the controls and then calibrate those same controls
+against it, the p-values will look beautifully uniform whatever the truth is —
+the null was fitted to make them so. Any honest check of calibration must hold
+out the control being evaluated, which is what the loop above does and what
+[`evaluateCiCalibration`](confidence-intervals.qmd#evaluating-coverage) does for
+intervals.
+:::
+
+## Type 1 error across the null
+
+The fitted null also lets you say, before seeing any result, what the design's
+real type I error rate is at a nominal threshold — as a function of how
+precisely the outcome is estimated.
+
+```{python}
+#| fig-cap: "Probability of a nominally significant result when the null is true, as a function of standard error, under this study's empirical null."
+null = ec.fitNull(neg.logRr, neg.seLogRr)
+fig = ec.plotExpectedType1Error(neg.logRr, neg.seLogRr, null=null, alpha=0.05)
+```
+
+Precise estimates (small standard error) are *more* likely to be false
+positives, not less: as $\hat\sigma \to 0$ the random error disappears but the
+systematic error $\sigma$ does not, and the traditional test compares an
+estimate centred at $\mu$ against a null centred at 0 with a vanishing yardstick.
+That is the "large observational studies are reliably significant" problem in
+one figure.
+
+## The MCMC variant
+
+`calibrateP` also accepts an `McmcNull`, in which case the calibration is
+performed once per posterior draw and returned with a credible interval:
+
+```{python}
+ec.set_seed(123)
+mcmc_null = ec.fitMcmcNull(neg.logRr, neg.seLogRr, iter=10_000)
+pos = sccs[sccs.groundTruth == 1]
+ec.calibrateP(mcmc_null, pos.logRr, pos.seLogRr)
+```
+
+The interval reflects uncertainty in $\mu$ and $\sigma$ — the thing the
+point-estimate version silently ignores. See [MCMC](mcmc.qmd).
+
+## API
+
+| Function | Returns |
+|---|---|
+| [`calibrateP(null, logRr, seLogRr, twoSided=True, upper=True)`](../reference/index.qmd#calibratep) | array of calibrated p-values, or a data frame with a credible interval for an `McmcNull` |
+| [`computeTraditionalP(logRr, seLogRr, twoSided=True, upper=True)`](../reference/index.qmd#computetraditionalp) | the uncalibrated p-value, for comparison |
+| [`plotCalibrationEffect(...)`](../reference/index.qmd#plotcalibrationeffect) | the null band against the theoretical one |
+| [`plotExpectedType1Error(...)`](../reference/index.qmd#plotexpectedtype1error) | type I error against standard error |
+
+## References
+
+::: {#refs}
+:::

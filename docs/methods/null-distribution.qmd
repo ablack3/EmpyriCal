@@ -1,0 +1,206 @@
+---
+title: "The empirical null distribution"
+subtitle: "A likelihood for the error a study design makes"
+---
+
+## Notation
+
+::: {.notation}
+
+| Symbol | Meaning | In code |
+|---|---|---|
+| $\beta_i$ | true log relative risk for hypothesis $i$ | — |
+| $\hat\beta_i$ | estimated log relative risk | `logRr` |
+| $\hat\sigma_i$ | its standard error | `seLogRr` |
+| $\epsilon_i$ | systematic error for hypothesis $i$ | — |
+| $\mu$ | mean of the systematic error distribution | `null[0]`, `null.mean` |
+| $\sigma$ | standard deviation of the systematic error distribution | `null[1]`, `null.sd` |
+| $\tau$ | precision, $\tau = 1/\sigma^2$ | the optimiser's parameterisation |
+
+:::
+
+## The model
+
+Decompose an estimate into truth, systematic error and random error:
+
+$$
+\hat\beta_i \;=\; \beta_i \;+\; \epsilon_i \;+\; \eta_i,
+\qquad \eta_i \sim N\!\left(0, \hat\sigma_i^2\right).
+$$
+
+The random part $\eta_i$ is what the standard error already describes. The
+modelling decision is what to do with $\epsilon_i$, and the choice
+[@schuemie2014] make is to treat it as a **random effect exchangeable across
+hypotheses**:
+
+$$
+\epsilon_i \;\sim\; N\!\left(\mu,\ \sigma^2\right).
+$$
+
+Two parameters, and they mean different things. $\mu$ is the **bias** the design
+carries on average — a design that systematically overstates risk has $\mu > 0$.
+$\sigma$ is the **heterogeneity** of that bias across hypotheses: even a design
+with $\mu = 0$ is unreliable if it swings hard in both directions from one
+outcome to the next, and $\sigma$ is what records that. The theoretical null is
+the special case $\mu = 0,\ \sigma = 0$.
+
+For a negative control, $\beta_i = 0$ by definition, so the two error terms are
+all that is left. They are independent normals, so they add:
+
+::: {.keyresult}
+$$
+\hat\beta_i \;\big|\; \hat\sigma_i \;\sim\; N\!\left(\mu,\ \sigma^2 + \hat\sigma_i^2\right)
+\qquad \text{for a negative control.}
+$$
+:::
+
+This is the empirical null distribution. Note that it is not a single
+distribution over the observed estimates — each control has its own variance,
+because each has its own standard error. A precisely estimated control is
+expected to sit close to $\mu$; an imprecise one is allowed to wander. The
+shared parameters are $\mu$ and $\sigma$, and those are what get fitted.
+
+## The likelihood
+
+With $n$ negative controls, taking them as independent, the log-likelihood is a
+sum of normal densities each with its own total variance:
+
+$$
+\ell(\mu, \sigma) \;=\; \sum_{i=1}^{n}
+\log \phi\!\left(\hat\beta_i \;;\; \mu,\ \sqrt{\sigma^2 + \hat\sigma_i^2}\right)
+$$
+
+where $\phi(x; m, s)$ is the normal density with mean $m$ and standard deviation
+$s$. Written out,
+
+$$
+\ell(\mu, \sigma) \;=\; -\frac{1}{2}\sum_{i=1}^{n}
+\left[
+\log\!\left(2\pi\left(\sigma^2 + \hat\sigma_i^2\right)\right)
+\;+\;
+\frac{\left(\hat\beta_i - \mu\right)^2}{\sigma^2 + \hat\sigma_i^2}
+\right].
+$$
+
+The estimates $(\hat\mu, \hat\sigma)$ maximise this. It is the same likelihood
+as a random-effects meta-analysis with the overall effect fixed at the control
+value, which is a useful way to hold it in mind: $\sigma$ plays the role of the
+between-study heterogeneity $\tau$, and $\hat\sigma_i$ the within-study variance.
+
+::: {.callout-note collapse="true"}
+## How it is actually optimised
+
+`fitNull` minimises $-\ell$ with R's Nelder–Mead from a start of
+$(\mu, \tau) = (0, 1)$, parameterised by the **precision** $\tau = 1/\sigma^2$
+rather than $\sigma$, and reports $\hat\sigma = 1/\sqrt{\hat\tau}$. Two guards
+carried over from the original C++: a non-positive $\tau$ returns $+\infty$, and
+when $\sigma < 10^{-6}$ the density is evaluated directly rather than through
+the product form, so a degenerate null does not divide by zero.
+
+The optimiser is a port of R's, not SciPy's — see [Validation](../validation.qmd)
+for why that was necessary.
+:::
+
+## Fitting one
+
+```{python}
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+print(null)
+```
+
+```{python}
+import numpy as np
+
+print(f"mean bias            mu = {null[0]:.3f}  (RR {np.exp(null[0]):.2f})")
+print(f"heterogeneity     sigma = {null[1]:.3f}")
+```
+
+Read that as: this design, on this data, overestimates the log relative risk by
+0.79 on average, and individual estimates scatter around that with a further
+standard deviation of 0.28 beyond their own reported standard errors.
+
+## Is the fitted null a good description?
+
+The model assumes the systematic errors are normal. That is checkable — the
+clearest way to see it is to compare the rejection region the fitted null
+implies against the one the theoretical null implies.
+
+```{python}
+#| fig-cap: "Negative controls with the fitted empirical null. The orange region is where the calibrated test would declare significance; the grey dashed boundary is where the traditional test would. Calibration has shifted and shrunk the rejection region to match the error this design demonstrably makes."
+fig = ec.plotCalibrationEffect(negatives.logRr, negatives.seLogRr)
+```
+
+The orange region is narrow and off-centre, which is the point: after
+calibration, an estimate has to be much larger — and in the right direction —
+before this design can call it significant. The `plotCalibration` diagnostic on
+the [p-value page](p-values.qmd#seeing-it) makes the same comparison in terms of
+the resulting p-value distribution.
+
+When the normal assumption is doubtful — heavy tails, a few outlying controls
+dominating the fit — there are two alternatives. [MCMC](mcmc.qmd) keeps the
+normal model but replaces point estimates with a posterior, so the uncertainty
+in $\mu$ and $\sigma$ propagates into every calibrated p-value. And
+[non-normal likelihood approximations](likelihood-approximations.qmd) drop the
+assumption that each *control's own* likelihood is normal, which matters for
+rare outcomes where the per-hypothesis likelihood is genuinely skewed.
+
+## What the number of controls buys you
+
+$\mu$ and $\sigma$ are estimated, and with few controls they are estimated
+badly. The practical guidance from the OHDSI work is on the order of 50 negative
+controls; below about 20 the fitted $\sigma$ is unstable enough that the
+calibration itself becomes a source of error. This simulation shows the spread
+of fitted parameters at three control counts, drawing from a known null:
+
+```{python}
+#| fig-cap: "Sampling variability of the fitted null. Each point is one simulated study with a true mu = 0.3, sigma = 0.25 (marked in red)."
+import matplotlib.pyplot as plt
+
+truth = dict(mean=0.3, sd=0.25)
+fig, axes = plt.subplots(1, 3, figsize=(9, 3.2), sharex=True, sharey=True)
+
+for ax, n in zip(axes, [10, 25, 100]):
+    ec.set_seed(42)
+    mus, sds = [], []
+    for _ in range(200):
+        d = ec.simulateControls(n=n, trueLogRr=0, **truth)
+        fit = ec.fitNull(d.logRr, d.seLogRr)
+        mus.append(fit[0])
+        sds.append(fit[1])
+    ax.scatter(mus, sds, s=6, alpha=0.35, color="#1f4e79", edgecolors="none")
+    ax.scatter([truth["mean"]], [truth["sd"]], color="crimson", marker="+", s=160, zorder=5)
+    ax.set_title(f"n = {n}", fontsize=10)
+    ax.set_xlabel(r"fitted $\mu$")
+axes[0].set_ylabel(r"fitted $\sigma$")
+fig.tight_layout()
+```
+
+At $n = 10$ the fitted null is barely informative about the true null. At
+$n = 100$ it is tight. Nothing about the calibration machinery downstream
+compensates for a badly estimated null, which is the argument for using an MCMC
+fit when the control set is small — it at least reports the uncertainty rather
+than hiding it.
+
+## API
+
+| Function | Use |
+|---|---|
+| [`fitNull(logRr, seLogRr)`](../reference/index.qmd#fitnull) | Maximum-likelihood fit; returns a `Null`. |
+| [`fitMcmcNull(logRr, seLogRr)`](../reference/index.qmd#fitmcmcnull) | Posterior via MCMC; returns an `McmcNull`. See [MCMC](mcmc.qmd). |
+| [`fitNullNonNormalLl(...)`](../reference/index.qmd#fitnullnonnormalll) | Fit from non-normal per-control likelihoods. |
+| [`simulateControls(...)`](../reference/index.qmd#simulatecontrols) | Draw controls from a known null, for checks like the one above. |
+
+Before fitting, `fitNull` drops estimates with infinite or missing `logRr` or
+`seLogRr`, and any with $\lvert\hat\beta\rvert > \log 100$, warning each time.
+Those are almost always numerical failures rather than real estimates, and a
+single one can dominate the likelihood.
+
+## References
+
+::: {#refs}
+:::

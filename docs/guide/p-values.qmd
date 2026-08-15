@@ -1,0 +1,169 @@
+---
+title: "Calibrating p-values"
+subtitle: "Options, batches and diagnostics"
+---
+
+The theory is on the [p-value calibration](../methods/p-values.qmd) page; this
+one is about using it.
+
+```{python}
+import numpy as np
+import pandas as pd
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+positive = sccs[sccs.groundTruth == 1]
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+null
+```
+
+## One-sided and two-sided
+
+```{python}
+args = (null, positive.logRr, positive.seLogRr)
+print("two-sided:      ", ec.calibrateP(*args)[0])
+print("one-sided upper:", ec.calibrateP(*args, twoSided=False, upper=True)[0])
+print("one-sided lower:", ec.calibrateP(*args, twoSided=False, upper=False)[0])
+```
+
+`upper` is only consulted when `twoSided=False`. Use the upper one-sided test
+for safety questions ("does this increase risk?") — it is what MaxSPRT uses.
+
+## Calibrating many estimates at once
+
+`calibrateP` is vectorised; pass whole columns.
+
+```{python}
+results = sccs.copy()
+results["p_traditional"] = ec.computeTraditionalP(results.logRr, results.seLogRr)
+results["p_calibrated"] = ec.calibrateP(null, results.logRr, results.seLogRr)
+results.head(8).round(4)
+```
+
+::: {.callout-warning}
+## Do not calibrate a control against a null fitted on itself
+
+The table above includes the negative controls that were used to fit `null`,
+which is fine for illustration but is not a valid assessment of those controls.
+For that you need leave-one-out — every control calibrated against a null fitted
+on the others:
+
+```{python}
+neg = negatives.reset_index(drop=True)
+loo = [
+    ec.calibrateP(
+        ec.fitNull(neg.drop(index=i).logRr, neg.drop(index=i).seLogRr),
+        neg.logRr[i], neg.seLogRr[i],
+    )[0]
+    for i in range(len(neg))
+]
+print(f"{np.mean(np.asarray(loo) < 0.05):.0%} of held-out negative controls "
+      f"below 0.05 (nominal 5%)")
+```
+:::
+
+## Handling missing and infinite values
+
+`calibrateP` returns `nan` for any estimate with a missing or infinite `logRr`
+or `seLogRr`, rather than raising:
+
+```{python}
+ec.calibrateP(null, [0.2, np.nan, 0.5, np.inf], [0.1, 0.1, np.nan, 0.1])
+```
+
+`fitNull` is stricter — it *drops* such estimates before fitting, and warns each
+time, because a single infinite value would otherwise dominate the likelihood.
+It also drops any estimate with $\lvert\log \mathrm{RR}\rvert > \log 100$, which
+in practice means a model that failed to converge.
+
+```{python}
+#| warning: true
+import warnings
+
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    ec.fitNull([0.2, np.inf, 0.4], [0.1, 0.1, 0.1])
+    for w in caught:
+        print(w.message)
+```
+
+## Credible intervals via MCMC
+
+When the control set is small, report the uncertainty in the null itself:
+
+```{python}
+ec.set_seed(123)
+mcmc_null = ec.fitMcmcNull(negatives.logRr, negatives.seLogRr, iter=10_000)
+ec.calibrateP(mcmc_null, positive.logRr, positive.seLogRr)
+```
+
+Add `pValueOnly=True` to get just the medians as an array, so the call is
+drop-in compatible with the point-estimate version.
+
+```{python}
+ec.calibrateP(mcmc_null, positive.logRr, positive.seLogRr, pValueOnly=True)
+```
+
+## Diagnostics
+
+**Are the controls consistent with the fitted null?** `plotCalibration` shows
+the observed distribution of calibrated p-values against uniform.
+
+```{python}
+#| fig-cap: "Fraction of negative controls with p below alpha, for every alpha. The solid line is calibrated ('Empirical'), the dash-dot line uncalibrated ('Theoretical'); the faint diagonal is the uniform ideal."
+fig = ec.plotCalibration(negatives.logRr, negatives.seLogRr)
+```
+
+**How bad is the uncalibrated test?** `plotExpectedType1Error` turns the fitted
+null into the realised type I error rate as a function of precision.
+
+```{python}
+#| fig-cap: "Expected type 1 error under the empirical null. The dashed line is the nominal 5%."
+fig = ec.plotExpectedType1Error(negatives.logRr, negatives.seLogRr,
+                                seLogRrPositives=positive.seLogRr, alpha=0.05)
+```
+
+**Where does the estimate of interest sit?** `plotCalibrationEffect` places it
+against the null band.
+
+```{python}
+#| fig-cap: "Controls, the estimate of interest, and the region where a result would not be significant after calibration."
+fig = ec.plotCalibrationEffect(
+    negatives.logRr, negatives.seLogRr,
+    positive.logRr, positive.seLogRr,
+    showExpectedAbsoluteSystematicError=True,
+)
+```
+
+## A reporting pattern
+
+Report both numbers and the null that separates them. The calibrated p-value
+alone hides the reason it differs.
+
+```{python}
+def calibrated_report(null, logRr, seLogRr, name):
+    model = ec.convertNullToErrorModel(null)
+    ci = ec.calibrateConfidenceInterval(logRr, seLogRr, model)
+    trad = ec.computeTraditionalCi(logRr, seLogRr)
+    return pd.DataFrame({
+        "outcome": [name],
+        "rr": [round(float(trad.rr.iloc[0]), 2)],
+        "ci": [f"{trad.lb.iloc[0]:.2f}-{trad.ub.iloc[0]:.2f}"],
+        "p": [round(float(np.atleast_1d(ec.computeTraditionalP(logRr, seLogRr))[0]), 4)],
+        "rr_cal": [round(float(np.exp(ci.logRr.iloc[0])), 2)],
+        "ci_cal": [f"{np.exp(ci.logLb95Rr.iloc[0]):.2f}-{np.exp(ci.logUb95Rr.iloc[0]):.2f}"],
+        "p_cal": [round(float(ec.calibrateP(null, logRr, seLogRr)[0]), 4)],
+        "ease": [round(float(ec.computeExpectedAbsoluteSystematicError(null)), 3)],
+    })
+
+calibrated_report(null, positive.logRr.iloc[0], positive.seLogRr.iloc[0],
+                  positive.drugName.iloc[0])
+```
+
+## See also
+
+- [The mathematics](../methods/p-values.qmd)
+- [Confidence intervals](confidence-intervals.qmd)
+- [Plot gallery](plots.qmd)

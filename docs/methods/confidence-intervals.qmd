@@ -1,0 +1,242 @@
+---
+title: "Confidence interval calibration"
+subtitle: "From a null at zero to an error model at every effect size"
+---
+
+## Why the null is not enough
+
+The [empirical null](null-distribution.qmd) describes the error a study makes
+**when the true effect is zero**. That is all a p-value needs, because a p-value
+only ever asks about the null hypothesis.
+
+A confidence interval asks a different question. It is the set of true effect
+sizes not rejected by the data, so constructing it requires knowing how the
+study errs at $\beta = \log 2$, at $\beta = \log 4$, and everywhere else. The
+negative controls are silent on that. There is no reason to expect a design that
+overstates a null association by 0.79 to overstate a genuine doubling of risk by
+the same amount — most designs are biased *toward* the null at large effect
+sizes, because misclassification dilutes real signal.
+
+@schuemie2018 close the gap with **positive controls**: exposure–outcome pairs
+with a known, non-zero true effect.
+
+::: {.callout-note}
+## Where positive controls come from
+
+Real drug–outcome pairs with a reliably known effect size are scarce. In
+practice positive controls are *synthesised* from negative controls: take a
+negative control pair, inject additional simulated outcomes into the exposed
+time at a known relative risk, and re-run the design. The resulting pair has a
+true effect you set, and inherits the confounding structure of the negative
+control it came from. That inheritance is the reason the `crossValidationGroup`
+argument exists — a synthetic positive control and its parent negative control
+are not independent, so leave-one-out evaluation must drop them together.
+:::
+
+## The systematic error model
+
+Generalise the null's two parameters into two **functions** of the true effect
+size. For a hypothesis with true log relative risk $\beta$:
+
+$$
+\hat\beta \;\big|\; \beta \;\sim\; N\!\left(\mu(\beta),\ \sigma(\beta)^2 + \hat\sigma^2\right)
+$$
+
+with both the mean and the standard deviation of the systematic error linear:
+
+::: {.keyresult}
+$$
+\mu(\beta) \;=\; \mu_0 + \mu_1\,\beta,
+\qquad
+\sigma(\beta) \;=\; \sigma_0 + \sigma_1\,\lvert\beta\rvert .
+$$
+:::
+
+Four parameters, named `meanIntercept`, `meanSlope`, `sdIntercept` and
+`sdSlope`. The absolute value on $\beta$ in $\sigma(\beta)$ encodes that
+*dispersion* should grow with the magnitude of the effect regardless of its
+direction, while the *mean* shift is allowed to have a sign.
+
+Reading the parameters:
+
+| | Interpretation |
+|---|---|
+| $\mu_0$ | bias at the null — this is the null's $\mu$ |
+| $\mu_1$ | how bias scales with true effect. $\mu_1 = 1$ means bias is constant; $\mu_1 < 1$ means the design shrinks real effects toward the null |
+| $\sigma_0$ | heterogeneity at the null — the null's $\sigma$ |
+| $\sigma_1$ | how heterogeneity grows with effect size |
+
+At $\beta = 0$ the model reduces to $N(\mu_0, \sigma_0^2 + \hat\sigma^2)$, which
+is exactly the empirical null. The error model is a strict generalisation.
+
+### Fitting
+
+Maximum likelihood over all controls, negative and positive, each contributing
+its own known $\beta_i$:
+
+$$
+\ell(\mu_0,\mu_1,\sigma_0,\sigma_1) \;=\; \sum_{i=1}^{n}
+\log \phi\!\left(\hat\beta_i \;;\; \mu(\beta_i),\ \sqrt{\sigma(\beta_i)^2 + \hat\sigma_i^2}\right)
+$$
+
+`fitSystematicErrorModel` minimises $-\ell$ with BFGS. A negative $\sigma(\beta)$
+is rejected with $+\infty$; a non-finite total is clamped to 99999 so the
+optimiser walks back rather than failing.
+
+```{python}
+import empiricalcalibration as ec
+
+data = ec.datasets.southworthReplication()
+data = data[data.trueLogRr.notna()]
+
+model = ec.fitSystematicErrorModel(data.logRr, data.seLogRr, data.trueLogRr)
+print(model)
+```
+
+```{python}
+#| fig-cap: "The fitted systematic error model. Each panel is one true effect size; the curve is the fitted error distribution the model expects there, the dots are the controls."
+fig = ec.plotErrorModel(data.logRr, data.seLogRr, data.trueLogRr)
+```
+
+::: {.callout-tip}
+## The legacy model
+
+Passing `legacy=True` fits the earlier parameterisation
+$\sigma(\beta) = \exp(\sigma_0 + \sigma_1\beta)$, which guarantees positivity but
+makes $\sigma$ asymmetric in the sign of $\beta$ and is harder to interpret. It
+exists for reproducing analyses that used it; the current model is the default
+and the one to use for new work. Everything downstream — including
+`calibrateConfidenceInterval` — detects which was fitted from the parameter
+names and uses the matching formula.
+:::
+
+## Constructing the interval
+
+A confidence interval is the set of true effect sizes the data do not reject.
+With the error model in hand, "reject $\beta$" means the observed $\hat\beta$
+falls in the tail of $N(\mu(\beta), \sigma(\beta)^2 + \hat\sigma^2)$. So the
+bounds of a $w$-width interval are the values of $\beta$ that put $\hat\beta$
+exactly at the tail cutoff.
+
+Write $z = \Phi^{-1}\!\left(\frac{1-w}{2}\right)$ (so $z = -1.96$ for
+$w = 0.95$). The bounds solve
+
+::: {.keyresult}
+$$
+g(\beta) \;=\; z \;+\; \frac{\mu(\beta) - \hat\beta}{\sqrt{\sigma(\beta)^2 + \hat\sigma^2}} \;=\; 0
+$$
+:::
+
+for the **lower** bound, and the same equation with $z$ replaced by $-z$ for the
+**upper** bound. The **calibrated point estimate** is the solution with $z = 0$
+— the effect size at which the model expects, on average, to observe what was
+observed:
+
+$$
+\mu(\beta) = \hat\beta.
+$$
+
+There is no closed form, because $\beta$ appears inside both $\mu(\cdot)$ and
+$\sigma(\cdot)$ and hence inside the square root. `calibrateConfidenceInterval`
+solves each of the three equations numerically with Brent's method on
+$\beta \in [-100, 100]$, returning `nan` when $g$ does not change sign on that
+interval (which happens when the model is degenerate or the estimate is
+extreme).
+
+The reported `seLogRr` is then back-derived from the bounds, so that downstream
+code expecting an estimate-and-standard-error pair still works:
+
+$$
+\hat\sigma_{\text{cal}} \;=\; \frac{\beta_{\text{lower}} - \beta_{\text{upper}}}{2z}.
+$$
+
+```{python}
+import numpy as np
+
+# One estimate of interest: a modest positive association, tightly estimated.
+logRr, seLogRr = np.log(1.3), 0.08
+
+trad = ec.computeTraditionalCi(logRr, seLogRr)
+cal = ec.calibrateConfidenceInterval(logRr, seLogRr, model)
+
+print(f"traditional: RR {trad.rr[0]:.2f} "
+      f"({trad.lb[0]:.2f} - {trad.ub[0]:.2f})")
+print(f"calibrated:  RR {np.exp(cal.logRr[0]):.2f} "
+      f"({np.exp(cal.logLb95Rr[0]):.2f} - {np.exp(cal.logUb95Rr[0]):.2f})")
+```
+
+The calibrated interval is wider and shifted. It is wider because the design has
+demonstrable heterogeneity in its error, and shifted because the design has
+demonstrable bias — both measured, not assumed.
+
+## When you only have negative controls
+
+Positive controls are work to synthesise, and sometimes you have only the null.
+`convertNullToErrorModel` promotes a `Null` into a `SystematicErrorModel` by
+**assuming** the missing structure:
+
+$$
+\mu(\beta) = \mu + \mu_1\beta, \qquad \sigma(\beta) = \sigma
+$$
+
+with defaults $\mu_1 = 1$, $\sigma_1 = 0$ — i.e. the error distribution is the
+same at every true effect size, just translated.
+
+```{python}
+null = ec.fitNull(data.logRr[data.trueLogRr == 0], data.seLogRr[data.trueLogRr == 0])
+assumed = ec.convertNullToErrorModel(null)
+print(assumed)
+```
+
+::: {.callout-warning}
+## This assumption has a direction of failure
+
+Most observational designs are biased toward the null at large effect sizes, so
+their true $\mu_1$ is below 1. Assuming $\mu_1 = 1$ therefore *understates* how
+much the design shrinks real effects, and the resulting intervals have
+**below-nominal coverage** — they are too narrow, in the direction that matters.
+Compare the fitted `meanSlope` above (`{python} f"{model[1]:.2f}"`) against the
+assumed 1.00 to see the size of the gap in this example. Use positive controls
+when you can; when you cannot, treat these intervals as optimistic.
+:::
+
+## Evaluating coverage
+
+The claim a 95% interval makes is that it contains the truth 95% of the time.
+That is directly checkable on the controls, provided the interval being checked
+was built without them. `evaluateCiCalibration` does the leave-one-out fitting
+for you, honouring `crossValidationGroup` so synthetic positive controls are
+dropped alongside the negative control they were derived from.
+
+```{python}
+#| fig-cap: "Coverage of traditional and calibrated intervals across widths, by true effect size. The diagonal is nominal coverage."
+ec.set_seed(1)
+evaluation = ec.evaluateCiCalibration(
+    data.logRr, data.seLogRr, data.trueLogRr,
+)
+fig = ec.plotCiCoverage(evaluation=evaluation)
+```
+
+Traditional intervals sit far below the diagonal — a nominal 95% interval
+contains the truth much less than 95% of the time. Calibrated intervals track
+it much more closely, which is the whole claim being made.
+
+## API
+
+| Function | Use |
+|---|---|
+| [`fitSystematicErrorModel(logRr, seLogRr, trueLogRr, ...)`](../reference/index.qmd#fitsystematicerrormodel) | Fit the four-parameter model from controls with known effects. |
+| [`calibrateConfidenceInterval(logRr, seLogRr, model, ciWidth=0.95)`](../reference/index.qmd#calibrateconfidenceinterval) | Calibrated estimate and bounds. |
+| [`convertNullToErrorModel(null, meanSlope=1, sdSlope=0)`](../reference/index.qmd#convertnulltoerrormodel) | Build a model from negative controls alone, under assumption. |
+| [`computeTraditionalCi(logRr, seLogRr, ciWidth=0.95)`](../reference/index.qmd#computetraditionalci) | The uncalibrated interval, for comparison. |
+| [`evaluateCiCalibration(...)`](../reference/index.qmd#evaluatecicalibration) | Leave-one-out coverage evaluation. |
+| [`plotErrorModel`](../reference/index.qmd#ploterrormodel), [`plotCiCoverage`](../reference/index.qmd#plotcicoverage), [`plotCiCalibration`](../reference/index.qmd#plotcicalibration) | Diagnostics. |
+
+Passing `estimateCovarianceMatrix=True` to `fitSystematicErrorModel` adds
+`CovarianceMatrix`, `LB95CI` and `UB95CI` to `model.attributes`, computed from
+the inverse Hessian at the optimum.
+
+## References
+
+::: {#refs}
+:::

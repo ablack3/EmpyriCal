@@ -1,0 +1,155 @@
+---
+title: "Coming from R"
+subtitle: "Line-by-line translation from the OHDSI package"
+---
+
+This package is a port of
+[EmpiricalCalibration](https://github.com/OHDSI/EmpiricalCalibration) v3.1.4.
+Function names, argument names, argument order and defaults are unchanged, so
+most R code translates by changing `<-` to `=` and `$` to `.`.
+
+## Side by side
+
+::: {.panel-tabset}
+
+## R
+
+```r
+library(EmpiricalCalibration)
+
+data(sccs)
+negatives <- sccs[sccs$groundTruth == 0, ]
+positive  <- sccs[sccs$groundTruth == 1, ]
+
+null <- fitNull(negatives$logRr, negatives$seLogRr)
+null
+
+computeTraditionalP(positive$logRr, positive$seLogRr)
+calibrateP(null, positive$logRr, positive$seLogRr)
+
+model <- convertNullToErrorModel(null)
+calibrateConfidenceInterval(positive$logRr, positive$seLogRr, model)
+
+plotCalibrationEffect(negatives$logRr, negatives$seLogRr,
+                      positive$logRr, positive$seLogRr)
+```
+
+## Python
+
+```python
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+positive = sccs[sccs.groundTruth == 1]
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+print(null)
+
+ec.computeTraditionalP(positive.logRr, positive.seLogRr)
+ec.calibrateP(null, positive.logRr, positive.seLogRr)
+
+model = ec.convertNullToErrorModel(null)
+ec.calibrateConfidenceInterval(positive.logRr, positive.seLogRr, model)
+
+ec.plotCalibrationEffect(negatives.logRr, negatives.seLogRr,
+                         positive.logRr, positive.seLogRr)
+```
+
+:::
+
+## Translation table
+
+| R | Python |
+|---|---|
+| `library(EmpiricalCalibration)` | `import empiricalcalibration as ec` |
+| `data(sccs)` | `sccs = ec.datasets.sccs()` |
+| `df$logRr` | `df.logRr` |
+| `df[df$groundTruth == 0, ]` | `df[df.groundTruth == 0]` |
+| `null[1]`, `null[2]` | `null[0]`, `null[1]` — or `null["mean"]`, `null.mean` |
+| `attr(cv, "alpha")` | `cv.alpha` |
+| `attr(model, "LB95CI")` | `model.attributes["LB95CI"]` |
+| `attr(delta, "ease1")` | `delta.attrs["ease1"]` |
+| `attr(null, "mcmc")$chain` | `null.mcmc["chain"]` |
+| `set.seed(42)` | `ec.set_seed(42)` |
+| `print(null)` | `print(null)` |
+| `ggsave(p, "f.png")` / `fileName=` | `fileName=` (unchanged) |
+
+Indexing is the one place to be careful: R's `null[1]` is the mean, and so is
+Python's `null[0]`. Name-based access avoids the trap entirely.
+
+```{python}
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+
+print(null[0], null["mean"], null.mean)   # all the same
+print(null[1], null["sd"], null.sd)
+```
+
+## Function coverage
+
+Everything the R package exports is present.
+
+**Null and p-values** — `fitNull`, `fitNullNonNormalLl`, `fitMcmcNull`,
+`calibrateP`, `computeTraditionalP`
+
+**Confidence intervals** — `fitSystematicErrorModel`,
+`calibrateConfidenceInterval`, `computeTraditionalCi`, `convertNullToErrorModel`
+
+**Systematic error** — `computeExpectedAbsoluteSystematicError`, `compareEase`
+
+**MaxSPRT** — `calibrateLlr`, `computeCvPoisson`, `computeCvBinomial`,
+`computeCvPoissonRegression`
+
+**Evaluation and simulation** — `evaluateCiCalibration`, `simulateControls`,
+`simulateMaxSprtData`
+
+**Plots** — `plotForest`, `plotCalibration`, `plotCalibrationEffect`,
+`plotCiCalibration`, `plotCiCalibrationEffect`, `plotCiCoverage`,
+`plotErrorModel`, `plotExpectedType1Error`, `plotMcmcTrace`,
+`plotTrueAndObserved`
+
+The R package's typos are preserved where they appear in exported names, so
+`normalLlApproximaton` and `closedFormIntegeralAbsolute` are spelled as in R.
+
+## Deliberate differences
+
+1. **Plots return a matplotlib `Figure`**, not a ggplot object. Signatures,
+   colours, breaks, labels and saved dimensions are unchanged.
+   `plotExpectedType1Error(showEffectSizes=True)` returns a two-panel `Figure`
+   where R returns a `gtable`.
+
+2. **`cohortMethod.groundTruth` is an integer.** In the R data it is a *factor*
+   with levels `"0"`/`"1"`, while `sccs` and `caseControl` store it as a number.
+   Making it an integer everywhere matches the documented format and keeps
+   `df.groundTruth == 1` behaving the same across all three.
+
+3. **`title` and `evaluation` default to `None`** rather than being R "missing"
+   arguments. Passing `None` is the same as omitting them.
+
+4. **Errors are Python exceptions.** R's `stop()` becomes `ValueError`;
+   `warning()` becomes `warnings.warn(...)` with the same message text.
+
+5. **`print()` rather than `message()`.** Notices such as "Detected data
+   following normal distribution" go to stdout rather than stderr.
+
+## Do the numbers match?
+
+Yes, to a degree that is deliberate rather than incidental — R's optimisers,
+integrator, RNG and special functions were ported rather than swapped for SciPy
+equivalents, because the substitutes disagree in the third or fourth decimal.
+`ec.set_seed(n)` reproduces R's `set.seed(n)` stream exactly, so stochastic
+functions agree run-for-run and not merely in distribution.
+
+The full accounting, including where and why residual differences remain, is on
+the [Validation](../validation.qmd) page.
+
+## Still using R?
+
+The original R package is vendored in this repository under
+[`extras/r-package/`](https://github.com/ablack3/EmpyriCal/tree/main/extras/r-package),
+and the scripts that generate and check the R gold standard are in
+[`extras/r-parity/`](https://github.com/ablack3/EmpyriCal/tree/main/extras/r-parity).

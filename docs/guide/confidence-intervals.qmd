@@ -1,0 +1,184 @@
+---
+title: "Calibrating confidence intervals"
+subtitle: "Fitting the error model and checking its coverage"
+---
+
+The theory is on the [confidence interval calibration](../methods/confidence-intervals.qmd)
+page. This one is the practical path.
+
+## The data you need
+
+Confidence interval calibration needs controls with **known true effect sizes**
+— negative controls at `trueLogRr = 0` and positive controls at known non-zero
+values. The `southworthReplication` dataset is a replication of a
+dabigatran/warfarin study with synthetic positive controls at relative risks of
+1.5, 2 and 4:
+
+```{python}
+import numpy as np
+import empiricalcalibration as ec
+
+data = ec.datasets.southworthReplication()
+controls = data[data.trueLogRr.notna()]
+
+print(controls.groupby("trueLogRr").size().rename("n").to_frame().T)
+controls.head()
+```
+
+Rows where `trueLogRr` is missing are the outcomes of interest — the ones whose
+true effect you do not know, and the reason for the whole exercise.
+
+## Fit the error model
+
+```{python}
+model = ec.fitSystematicErrorModel(
+    controls.logRr, controls.seLogRr, controls.trueLogRr
+)
+print(model)
+```
+
+The four parameters are `meanIntercept` ($\mu_0$), `meanSlope` ($\mu_1$),
+`sdIntercept` ($\sigma_0$) and `sdSlope` ($\sigma_1$), giving
+
+$$\mu(\beta) = \mu_0 + \mu_1\beta, \qquad \sigma(\beta) = \sigma_0 + \sigma_1|\beta|.$$
+
+```{python}
+print(f"bias at the null:              {model[0]:+.3f}")
+print(f"bias scaling with true effect: {model[1]:.3f}"
+      f"{'  (< 1: real effects are shrunk toward the null)' if model[1] < 1 else ''}")
+print(f"heterogeneity at the null:     {model[2]:.3f}")
+print(f"heterogeneity growth:          {model[3]:+.3f}")
+```
+
+Add `estimateCovarianceMatrix=True` for parameter uncertainty:
+
+```{python}
+model_ci = ec.fitSystematicErrorModel(
+    controls.logRr, controls.seLogRr, controls.trueLogRr,
+    estimateCovarianceMatrix=True,
+)
+import pandas as pd
+pd.DataFrame({
+    "estimate": np.asarray(model_ci),
+    "lb95": model_ci.attributes["LB95CI"],
+    "ub95": model_ci.attributes["UB95CI"],
+}, index=model_ci.names).round(3)
+```
+
+## Calibrate
+
+```{python}
+outcomes = data[data.trueLogRr.isna()].head(6)
+
+ci = ec.calibrateConfidenceInterval(outcomes.logRr, outcomes.seLogRr, model)
+trad = ec.computeTraditionalCi(outcomes.logRr, outcomes.seLogRr)
+
+pd.DataFrame({
+    "outcome": outcomes.outcomeName.values,
+    "rr": trad.rr.round(2).values,
+    "ci95": [f"{l:.2f}-{u:.2f}" for l, u in zip(trad.lb, trad.ub)],
+    "rr_cal": np.exp(ci.logRr).round(2).values,
+    "ci95_cal": [f"{np.exp(l):.2f}-{np.exp(u):.2f}"
+                 for l, u in zip(ci.logLb95Rr, ci.logUb95Rr)],
+})
+```
+
+Calibrated intervals are wider — sometimes much wider — and shifted. Both
+reflect measured properties of the design.
+
+Other widths are available:
+
+```{python}
+ec.calibrateConfidenceInterval(outcomes.logRr.iloc[:1], outcomes.seLogRr.iloc[:1],
+                               model, ciWidth=0.99).round(3)
+```
+
+The returned `seLogRr` is back-derived from the bounds so that the calibrated
+estimate can be fed into downstream code (meta-analysis, forest plots) that
+expects an estimate-and-standard-error pair.
+
+## Check the coverage
+
+This is the step that is easy to skip and should not be. `evaluateCiCalibration`
+refits the error model leaving each control out, calibrates that control against
+the held-out model, and tabulates coverage across interval widths.
+
+```{python}
+ec.set_seed(1)
+evaluation = ec.evaluateCiCalibration(
+    controls.logRr, controls.seLogRr, controls.trueLogRr
+)
+evaluation.head()
+```
+
+```{python}
+#| fig-cap: "Coverage against nominal width, by true effect size. Traditional intervals fall well below the diagonal; calibrated intervals track it."
+fig = ec.plotCiCoverage(evaluation=evaluation)
+```
+
+```{python}
+at95 = evaluation[np.isclose(evaluation.ciWidth, 0.95)]
+at95[["Confidence interval calculation", "trueRr", "coverage"]].round(3)
+```
+
+::: {.callout-important}
+## `crossValidationGroup` when positive controls are synthetic
+
+Synthetic positive controls are built by injecting outcomes into a negative
+control, so a positive control and its parent negative control share confounding
+structure — they are not independent. Leave-one-out that drops only one of them
+leaks information and flatters the coverage estimate.
+
+Pass `crossValidationGroup` to make them drop together, one value per group:
+
+```python
+evaluation = ec.evaluateCiCalibration(
+    logRr, seLogRr, trueLogRr,
+    crossValidationGroup=parentNegativeControlId,
+)
+```
+:::
+
+## Without positive controls
+
+`convertNullToErrorModel` builds a model from negative controls alone by
+assuming $\mu_1 = 1$ and $\sigma_1 = 0$ — that the error distribution is the
+same at every true effect size.
+
+```{python}
+negatives = controls[controls.trueLogRr == 0]
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+assumed = ec.convertNullToErrorModel(null)
+
+print("assumed: ", np.asarray(assumed).round(3))
+print("fitted:  ", np.asarray(model).round(3))
+```
+
+Compare `meanSlope`: assumed 1.00 against the fitted value above. The fitted
+design shrinks real effects toward the null; assuming it does not produces
+intervals that are too narrow. If you must use the assumed model, say so, and
+treat the intervals as a lower bound on the true uncertainty.
+
+You can supply your own slopes if you have external reason to:
+
+```python
+ec.convertNullToErrorModel(null, meanSlope=0.9, sdSlope=0.05)
+```
+
+## Visual diagnostics
+
+```{python}
+#| fig-cap: "The fitted error model. One panel per true effect size; the curve is the error distribution the model predicts, the dots are the controls."
+fig = ec.plotErrorModel(controls.logRr, controls.seLogRr, controls.trueLogRr)
+```
+
+```{python}
+#| fig-cap: "Calibrated versus uncalibrated intervals for the controls, by true effect size."
+fig = ec.plotCiCalibration(evaluation=evaluation)
+```
+
+## See also
+
+- [The mathematics](../methods/confidence-intervals.qmd)
+- [EASE](../methods/ease.qmd) — summarising and comparing designs
+- [Plot gallery](plots.qmd)

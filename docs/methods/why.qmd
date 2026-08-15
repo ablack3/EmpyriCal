@@ -1,0 +1,125 @@
+---
+title: "Why empirical calibration is needed"
+subtitle: "The nominal null is the wrong null"
+---
+
+## Two kinds of error, one standard error
+
+Every effect estimate from an observational study is wrong by some amount. Split
+that error in two.
+
+**Random error** comes from having a finite sample. It shrinks as $1/\sqrt{n}$,
+it is what the standard error measures, and it is what the entire apparatus of
+confidence intervals and p-values is built to handle.
+
+**Systematic error** comes from the study not being the experiment you wish you
+had run: unmeasured confounding, selection into the cohort, misclassification of
+exposure or outcome, informative censoring, and the accumulated effect of
+analytic choices. It does **not** shrink with sample size. Nothing in the
+standard error knows about it.
+
+Traditional inference assumes the second category is empty. For a log relative
+risk $\beta$ estimated as $\hat\beta$ with standard error $\hat\sigma$, it takes
+
+$$
+\hat\beta \sim N\!\left(\beta,\ \hat\sigma^2\right)
+$$
+
+and reports $p = 2\,\Phi\!\left(-\lvert\hat\beta\rvert/\hat\sigma\right)$ against
+$\beta = 0$. If systematic error is present the location and the spread of that
+sampling distribution are both wrong, so the p-value is computed against a null
+the data never had a chance of following.
+
+The consequence is not subtle. As $n$ grows, random error vanishes, systematic
+error does not, and the p-value converges to zero regardless of whether there is
+a real effect. **Large observational studies are reliably significant and
+unreliably correct.**
+
+## Negative controls make the error visible
+
+A **negative control** is an exposure–outcome pair for which the true effect is
+known — or as close to known as the domain allows — to be null [@lipsitch2010].
+Ibuprofen does not cause ingrown toenails. If you run your study design,
+unchanged, on a few dozen such pairs, then any signal that comes back is error
+by construction, because the truth is zero.
+
+That is the whole idea. You cannot see the bias in your estimate of interest,
+because you do not know its true value. You *can* see the bias in estimates
+whose true value you do know, and if the design's problems are not specific to
+one outcome, what you see there transfers.
+
+::: {.callout-note}
+## The exchangeability assumption
+
+Calibration assumes the systematic error affecting your hypothesis of interest
+is **exchangeable** with the systematic error affecting the controls — drawn
+from the same distribution. This is the assumption on which everything rests,
+and it is an assumption, not a theorem. It is most credible when the controls
+are numerous, chosen to resemble the outcome of interest in how they are
+recorded and who gets them, and run through exactly the same pipeline. It fails
+when the hypothesis of interest has a bias mechanism the controls do not share.
+:::
+
+## What the controls actually show
+
+Running the design on negative controls and plotting the estimates against their
+standard errors is diagnostic on its own. Under the theoretical null, 95% of the
+controls should fall inside the region where $\lvert\hat\beta\rvert < 1.96\,\hat\sigma$.
+
+```{python}
+#| fig-cap: "Negative controls (blue dots) from a self-controlled case series study, plotted as estimate against standard error. The grey dashed boundary encloses the region where the traditional test calls a result significant at p < 0.05; every control inside it is a false positive, because the truth for all of them is null."
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+
+fig = ec.plotCalibrationEffect(negatives.logRr, negatives.seLogRr)
+```
+
+```{python}
+import numpy as np
+
+p = ec.computeTraditionalP(negatives.logRr, negatives.seLogRr)
+print(f"negative controls:            {len(p)}")
+print(f"significant at nominal 0.05:  {np.mean(p < 0.05):.0%}")
+```
+
+Every one of those is a false positive: the truth for all of them is null. A
+test operating at a nominal 5% type I error rate is producing them at many times
+that rate. @schuemie2014 found the same thing across a range of designs and
+databases in the OMOP experiments — in several, the majority of negative
+controls reached nominal significance.
+
+This is what a mis-specified null looks like, and the fix is the one Efron
+proposed for large-scale testing generally [@efron2004]: stop using the
+theoretical null and estimate the null the data are actually drawn from.
+
+## Two things calibration is not
+
+**It is not a bias correction.** Calibration does not recover the unbiased
+estimate; it does not tell you what the answer would have been in a randomized
+trial. It widens and shifts your inference to reflect error you have
+demonstrated is present. A calibrated interval is an honest interval, not a
+corrected one.
+
+**It is not a licence to ignore study design.** The right response to an
+empirical null with a mean of 0.79 is to fix the design, not to calibrate
+against it and carry on. Calibration is what you do about the residual bias you
+could not eliminate — and the fitted null doubles as a scorecard telling you how
+much of that there is (see [EASE](ease.qmd)).
+
+## Where this goes
+
+The next pages develop the machinery:
+
+- [The empirical null](null-distribution.qmd) — fit a distribution to the
+  negative control estimates.
+- [P-value calibration](p-values.qmd) — evaluate a new estimate against it.
+- [Confidence intervals](confidence-intervals.qmd) — extend from the null to all
+  true effect sizes using positive controls.
+- [MaxSPRT](maxsprt.qmd) — do the same for sequential surveillance.
+
+## References
+
+::: {#refs}
+:::

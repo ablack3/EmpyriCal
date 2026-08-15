@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <rect width="64" height="64" rx="12" fill="#1f4e79"/>
+  <!-- the theoretical null: a narrow curve -->
+  <path d="M8 48 C 18 48, 20 20, 26 20 C 32 20, 34 48, 44 48"
+        fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"
+        opacity="0.45"/>
+  <!-- the empirical null: shifted and wider -->
+  <path d="M12 48 C 24 48, 26 12, 36 12 C 46 12, 48 48, 58 48"
+        fill="none" stroke="#ffd166" stroke-width="4" stroke-linecap="round"/>
+</svg>

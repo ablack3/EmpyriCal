@@ -1,0 +1,124 @@
+---
+title: "API reference"
+subtitle: "Every public function, generated from the package itself"
+toc-depth: 2
+---
+
+Signatures and documentation below are read from the installed package at render
+time, so they cannot drift from the code.
+
+```{python}
+#| echo: false
+import inspect
+import textwrap
+from IPython.display import Markdown, display
+
+import empiricalcalibration as ec
+
+
+def anchor(name):
+    return name.lower()
+
+
+def render(names, heading_level=3):
+    out = []
+    for name in names:
+        obj = getattr(ec, name)
+        try:
+            sig = str(inspect.signature(obj))
+        except (TypeError, ValueError):
+            sig = ""
+        doc = inspect.getdoc(obj) or "*(no docstring)*"
+        hashes = "#" * heading_level
+        out.append(
+            f'{hashes} `{name}` {{#{anchor(name)}}}\n\n'
+            f"```python\n{name}{sig}\n```\n\n"
+            f"{doc}\n"
+        )
+    display(Markdown("\n".join(out)))
+```
+
+## Null distribution and p-values
+
+```{python}
+#| echo: false
+render(["fitNull", "fitNullNonNormalLl", "fitMcmcNull",
+        "calibrateP", "computeTraditionalP"])
+```
+
+## Confidence interval calibration
+
+```{python}
+#| echo: false
+render(["fitSystematicErrorModel", "calibrateConfidenceInterval",
+        "computeTraditionalCi", "convertNullToErrorModel"])
+```
+
+## Systematic error summaries
+
+```{python}
+#| echo: false
+render(["computeExpectedAbsoluteSystematicError", "compareEase"])
+```
+
+## MaxSPRT and LLR calibration
+
+```{python}
+#| echo: false
+render(["calibrateLlr", "computeCvPoisson", "computeCvBinomial",
+        "computeCvPoissonRegression"])
+```
+
+## Evaluation and simulation
+
+```{python}
+#| echo: false
+render(["evaluateCiCalibration", "simulateControls", "simulateMaxSprtData"])
+```
+
+## Plots {#plots}
+
+```{python}
+#| echo: false
+render(["plotForest", "plotCalibration", "plotCalibrationEffect",
+        "plotCiCalibration", "plotCiCalibrationEffect", "plotCiCoverage",
+        "plotErrorModel", "plotExpectedType1Error", "plotMcmcTrace",
+        "plotTrueAndObserved"])
+```
+
+## Classes
+
+```{python}
+#| echo: false
+render(["Null", "McmcNull", "SystematicErrorModel"])
+```
+
+## Random number generation
+
+`ec.set_seed(n)` reproduces R's `set.seed(n)` stream exactly, so stochastic
+functions match R run-for-run. See [Validation](../validation.qmd).
+
+```{python}
+#| echo: false
+render(["set_seed", "get_generator"])
+```
+
+## Datasets
+
+```{python}
+#| echo: false
+lines = ["| dataset | rows | columns |", "|---|---|---|"]
+for name in ["sccs", "caseControl", "cohortMethod",
+             "southworthReplication", "grahamReplication"]:
+    df = getattr(ec.datasets, name)()
+    cols = ", ".join(f"`{c}`" for c in df.columns)
+    lines.append(f"| `ec.datasets.{name}()` | {len(df)} | {cols} |")
+display(Markdown("\n".join(lines)))
+```
+
+Each accessor returns a fresh `DataFrame`, so mutating one does not affect the
+package's copy. `ec.datasets.load(name)` takes the name as a string.
+
+```{python}
+ec.datasets.sccs().head()
+```

@@ -1,0 +1,108 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - "*.qmd"
+
+website:
+  title: "EmpiricalCalibration"
+  description: "Empirical calibration of p-values and confidence intervals for observational studies — a Python package."
+  site-url: "https://ablack3.github.io/EmpyriCal/"
+  repo-url: "https://github.com/ablack3/EmpyriCal"
+  repo-actions: [edit, issue]
+  favicon: favicon.svg
+  page-navigation: true
+  back-to-top-navigation: true
+  navbar:
+    left:
+      - text: "Home"
+        file: index.qmd
+      - text: "Why calibrate"
+        file: methods/why.qmd
+      - text: "Methods"
+        menu:
+          - methods/null-distribution.qmd
+          - methods/p-values.qmd
+          - methods/confidence-intervals.qmd
+          - methods/mcmc.qmd
+          - methods/ease.qmd
+          - methods/maxsprt.qmd
+          - methods/likelihood-approximations.qmd
+      - text: "Guide"
+        menu:
+          - guide/getting-started.qmd
+          - guide/p-values.qmd
+          - guide/confidence-intervals.qmd
+          - guide/maxsprt.qmd
+          - guide/plots.qmd
+          - guide/from-r.qmd
+      - text: "Reference"
+        file: reference/index.qmd
+      - text: "Validation"
+        file: validation.qmd
+    right:
+      - icon: github
+        href: "https://github.com/ablack3/EmpyriCal"
+        aria-label: GitHub
+  sidebar:
+    style: floating
+    collapse-level: 2
+    contents:
+      - file: index.qmd
+        text: Overview
+      - section: "The problem"
+        contents:
+          - methods/why.qmd
+      - section: "Methods and mathematics"
+        contents:
+          - methods/null-distribution.qmd
+          - methods/p-values.qmd
+          - methods/confidence-intervals.qmd
+          - methods/mcmc.qmd
+          - methods/ease.qmd
+          - methods/maxsprt.qmd
+          - methods/likelihood-approximations.qmd
+      - section: "User guide"
+        contents:
+          - guide/getting-started.qmd
+          - guide/p-values.qmd
+          - guide/confidence-intervals.qmd
+          - guide/maxsprt.qmd
+          - guide/plots.qmd
+          - guide/from-r.qmd
+      - section: "Reference"
+        contents:
+          - reference/index.qmd
+      - validation.qmd
+  page-footer:
+    left: "Apache 2.0. A Python port of the OHDSI R package [EmpiricalCalibration](https://github.com/OHDSI/EmpiricalCalibration)."
+    right: "Built with [Quarto](https://quarto.org)."
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles.scss]
+      dark: [darkly, styles-dark.scss]
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-overflow: wrap
+    code-line-numbers: false
+    highlight-style: github
+    html-math-method: katex
+    fig-width: 7
+    fig-height: 4.5
+    fig-dpi: 150
+    df-print: kable
+    citations-hover: true
+    link-external-newwindow: true
+
+execute:
+  freeze: false
+  warning: false
+  message: false
+  cache: false
+
+bibliography: references.bib
+
+jupyter: python3

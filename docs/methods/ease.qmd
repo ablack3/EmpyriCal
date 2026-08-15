@@ -1,0 +1,187 @@
+---
+title: "Expected absolute systematic error"
+subtitle: "One number for how much a study design can be trusted"
+---
+
+## Why one number
+
+A fitted null has two parameters, and neither alone summarises a design's
+reliability. A design with $\mu = 0.4,\ \sigma = 0$ is badly biased but at least
+consistently so. A design with $\mu = 0,\ \sigma = 0.4$ is unbiased on average
+and useless in any individual case, swinging hard in both directions. Reporting
+$\mu$ alone calls the second one perfect.
+
+The natural summary is the **expected absolute systematic error**: for a
+hypothesis drawn at random from the population the controls represent, how far
+off do you expect the estimate to be, ignoring sign?
+
+$$
+\mathrm{EASE} \;=\; \mathbb{E}\!\left[\,\lvert \epsilon \rvert\,\right],
+\qquad \epsilon \sim N(\mu, \sigma^2).
+$$
+
+Taking the absolute value is what makes both parameters count: it is zero only
+when $\mu = 0$ *and* $\sigma = 0$, and it grows in either.
+
+## The closed form
+
+$\lvert\epsilon\rvert$ has a folded normal distribution, whose mean is available
+in closed form:
+
+::: {.keyresult}
+$$
+\mathrm{EASE} \;=\; \mu\left(2\,\Phi\!\left(\tfrac{\mu}{\sigma}\right) - 1\right)
+\;+\; 2\,\sigma\,\phi\!\left(\tfrac{\mu}{\sigma}\right)
+$$
+:::
+
+with $\phi$ and $\Phi$ the standard normal density and CDF. No integration is
+needed at runtime.
+
+::: {.callout-note collapse="true"}
+## Deriving it
+
+Split the integral at zero:
+
+$$
+\mathbb{E}\lvert\epsilon\rvert = \int_{-\infty}^{\infty} \lvert x \rvert\, \phi(x; \mu, \sigma)\, dx
+= \int_{0}^{\infty} x\, \phi \, dx - \int_{-\infty}^{0} x\, \phi\, dx .
+$$
+
+Both pieces come from the same antiderivative. For
+$F(x) = \int^{x} t\,\phi(t;\mu,\sigma)\,dt$,
+
+$$
+F(x) \;=\; \mu\,\Phi(x; \mu, \sigma) \;-\; \sigma^2 \phi(x; \mu, \sigma),
+$$
+
+so $\mathbb{E}\lvert\epsilon\rvert = F(\infty) - 2F(0) + F(-\infty)$. Evaluating
+at the limits, $\Phi(\infty)=1$, $\Phi(-\infty)=0$, and $\phi$ vanishes at both,
+giving
+
+$$
+\mu - 2\left(\mu\,\Phi(0;\mu,\sigma) - \sigma^2\phi(0;\mu,\sigma)\right)
+= \mu\left(1 - 2\Phi\!\left(-\tfrac{\mu}{\sigma}\right)\right) + 2\sigma\phi\!\left(\tfrac{\mu}{\sigma}\right),
+$$
+
+which is the boxed result. The implementation follows this decomposition
+literally — `closedFormIntegeralAbsolute` is `F(inf) - 2*F(0) + F(-inf)` — which
+is why the source carries a constant $-1$ inside `closedFormIntegral` that
+cancels in the combination.
+:::
+
+Two limiting cases are worth checking against intuition:
+
+- $\sigma \to 0$: EASE $\to \lvert\mu\rvert$. Pure bias, no spread.
+- $\mu = 0$: EASE $= \sigma\sqrt{2/\pi} \approx 0.798\,\sigma$. Pure spread, no bias.
+
+```{python}
+import numpy as np
+import empiricalcalibration as ec
+
+print("sigma -> 0 :", ec.computeExpectedAbsoluteSystematicError(ec.Null(0.4, 1e-8)))
+print("mu = 0     :", ec.computeExpectedAbsoluteSystematicError(ec.Null(0, 0.4)),
+      " vs 0.4*sqrt(2/pi) =", 0.4 * np.sqrt(2 / np.pi))
+```
+
+Both designs from the opening paragraph score the same, which is the intended
+behaviour.
+
+## Using it
+
+EASE is on the log relative risk scale, so $\exp$ of it is interpretable as a
+multiplicative factor.
+
+```{python}
+sccs = ec.datasets.sccs()
+negatives = sccs[sccs.groundTruth == 0]
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+
+ease = ec.computeExpectedAbsoluteSystematicError(null)
+print(f"EASE = {ease:.3f}  (a typical estimate from this design is off by a "
+      f"factor of about {np.exp(ease):.2f})")
+```
+
+@schuemie2021 use EASE as an operating characteristic for choosing among study
+designs in vaccine safety surveillance: run every candidate design on the same
+negative controls, compute EASE for each, and prefer the one with the least
+systematic error. As a rough reading, EASE below about 0.1 is a well-behaved
+design; above 0.25 the design's own error dominates most effects you would care
+to detect.
+
+Passing an `McmcNull` returns the EASE posterior — computed for every draw in
+the chain — with a credible interval:
+
+```{python}
+ec.set_seed(1)
+mcmc_null = ec.fitMcmcNull(negatives.logRr, negatives.seLogRr, iter=10_000)
+ec.computeExpectedAbsoluteSystematicError(mcmc_null)
+```
+
+## Comparing two designs
+
+The common question is not "what is the EASE" but "is design A better than
+design B", where both were run on the **same** negative controls. Those two EASE
+estimates are correlated — they share the controls — so comparing their separate
+confidence intervals is the wrong test.
+
+`compareEase` handles this by bootstrapping the *paired* difference: resample
+the controls, refit both nulls on the same resampled set, take the difference in
+EASE, repeat.
+
+$$
+\Delta = \mathrm{EASE}_1 - \mathrm{EASE}_2
+$$
+
+The reported interval is the 2.5%/97.5% quantiles of the bootstrap distribution
+of $\Delta$, and the p-value is the fraction of bootstrap samples falling on the
+other side of zero from the observed difference.
+
+```{python}
+#| warning: false
+ec.set_seed(7)
+n = 60
+truth = ec.simulateControls(n=n, mean=0.0, sd=0.05, trueLogRr=0, seLogRr=0.15)
+
+# A second "design" applied to the same controls, with more systematic error.
+ec.set_seed(8)
+noisier = truth.copy()
+noisier["logRr"] = truth.logRr + ec.get_generator().rnorm(n, mean=0.25, sd=0.20)
+
+result = ec.compareEase(truth.logRr, truth.seLogRr, noisier.logRr, noisier.seLogRr,
+                        sampleSize=200)
+result
+```
+
+```{python}
+print("EASE, design 1:", result.attrs["ease1"].ease.iloc[0].round(3))
+print("EASE, design 2:", result.attrs["ease2"].ease.iloc[0].round(3))
+```
+
+::: {.callout-important}
+## The two sets must be in the same order
+
+`compareEase` pairs the $i$-th element of the first set with the $i$-th of the
+second, and the bootstrap resamples *indices*. If the two vectors are not
+aligned control-for-control, the pairing is meaningless and the interval will be
+wrong without any error being raised. Sort both by control identifier before
+calling it.
+:::
+
+The individual EASE values reported in `.attrs["ease1"]` and `.attrs["ease2"]`
+come from the bootstrap and may differ slightly from
+`computeExpectedAbsoluteSystematicError` on the same data, because their
+intervals are computed in the way that makes them consistent with the interval
+on the difference.
+
+## API
+
+| Function | Returns |
+|---|---|
+| [`computeExpectedAbsoluteSystematicError(null, alpha=0.05)`](../reference/index.qmd#computeexpectedabsolutesystematicerror) | float for a `Null`; a one-row frame with `ease`, `ciLb`, `ciUb` for an `McmcNull` |
+| [`compareEase(logRr1, seLogRr1, logRr2, seLogRr2, ...)`](../reference/index.qmd#compareease) | frame with `delta`, `ciLb`, `ciUb`, `p`; component EASEs in `.attrs` |
+
+## References
+
+::: {#refs}
+:::

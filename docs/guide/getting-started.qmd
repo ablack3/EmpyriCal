@@ -1,0 +1,172 @@
+---
+title: "Getting started"
+subtitle: "An end-to-end analysis in about thirty lines"
+---
+
+## Install
+
+```bash
+pip install git+https://github.com/ablack3/EmpyriCal.git
+```
+
+Or from a clone, for development:
+
+```bash
+git clone https://github.com/ablack3/EmpyriCal.git
+cd EmpyriCal
+pip install -e ".[test]"
+```
+
+Requires Python 3.9+, with NumPy, SciPy, pandas and matplotlib.
+
+## What you need to bring
+
+Empirical calibration operates on **effect estimates that already exist**. This
+package does not fit outcome models, build cohorts or touch a database — you run
+your study, and bring back:
+
+| | |
+|---|---|
+| `logRr` | the effect estimate on the **log** scale |
+| `seLogRr` | its standard error, also on the log scale |
+
+for your hypothesis of interest **and** for a set of negative controls run
+through the identical pipeline. If your analysis reports a relative risk and a
+95% confidence interval instead, convert:
+
+```{python}
+import numpy as np
+
+rr, lb95 = 1.32, 1.05
+logRr = np.log(rr)
+seLogRr = (np.log(lb95) - np.log(rr)) / -1.959964   # qnorm(0.025)
+print(f"logRr = {logRr:.4f}, seLogRr = {seLogRr:.4f}")
+```
+
+The packaged datasets have this shape:
+
+```{python}
+import empiricalcalibration as ec
+
+sccs = ec.datasets.sccs()
+sccs.head()
+```
+
+`groundTruth` is 1 for the positive control and 0 for negative controls. Five
+datasets ship with the package: `sccs`, `caseControl`, `cohortMethod`,
+`southworthReplication` and `grahamReplication`.
+
+## Step 1 — fit the null
+
+```{python}
+negatives = sccs[sccs.groundTruth == 0]
+positive = sccs[sccs.groundTruth == 1]
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+print(null)
+```
+
+Before going further, look at it. A mean far from zero or a standard deviation
+much above 0.1 says the design has substantial systematic error — worth knowing
+regardless of what you do next.
+
+```{python}
+ease = ec.computeExpectedAbsoluteSystematicError(null)
+print(f"EASE = {ease:.3f} (typical estimate off by a factor of {np.exp(ease):.2f})")
+```
+
+## Step 2 — calibrate the p-value
+
+```{python}
+p_trad = ec.computeTraditionalP(positive.logRr, positive.seLogRr)
+p_cal = ec.calibrateP(null, positive.logRr, positive.seLogRr)
+
+print(f"traditional p: {p_trad[0]:.4g}")
+print(f"calibrated  p: {p_cal[0]:.4g}")
+```
+
+## Step 3 — calibrate the confidence interval
+
+With only negative controls, promote the null into an error model under the
+assumption that the error distribution is the same at every true effect size:
+
+```{python}
+model = ec.convertNullToErrorModel(null)
+ci = ec.calibrateConfidenceInterval(positive.logRr, positive.seLogRr, model)
+
+trad = ec.computeTraditionalCi(positive.logRr, positive.seLogRr)
+print(f"traditional: RR {trad.rr.iloc[0]:.2f} "
+      f"({trad.lb.iloc[0]:.2f} - {trad.ub.iloc[0]:.2f})")
+print(f"calibrated:  RR {np.exp(ci.logRr.iloc[0]):.2f} "
+      f"({np.exp(ci.logLb95Rr.iloc[0]):.2f} - {np.exp(ci.logUb95Rr.iloc[0]):.2f})")
+```
+
+That assumption is doing real work — see
+[the warning](../methods/confidence-intervals.qmd#when-you-only-have-negative-controls).
+If you have positive controls, fit the error model properly instead:
+
+```python
+model = ec.fitSystematicErrorModel(data.logRr, data.seLogRr, data.trueLogRr)
+```
+
+## Step 4 — look at it
+
+```{python}
+#| fig-cap: "Negative controls (blue) and the positive control (yellow) against the fitted empirical null."
+fig = ec.plotCalibrationEffect(
+    negatives.logRr, negatives.seLogRr,
+    positive.logRr, positive.seLogRr,
+    showExpectedAbsoluteSystematicError=True,
+)
+```
+
+Every plot returns a `matplotlib.figure.Figure`, so you can adjust it or save it
+however you like. Passing `fileName=` saves directly, at the R package's
+dimensions:
+
+```python
+fig = ec.plotCalibrationEffect(..., fileName="calibration.png")
+```
+
+## The whole thing
+
+```python
+import empiricalcalibration as ec
+
+null = ec.fitNull(negatives.logRr, negatives.seLogRr)
+model = ec.convertNullToErrorModel(null)
+
+p = ec.calibrateP(null, study.logRr, study.seLogRr)
+ci = ec.calibrateConfidenceInterval(study.logRr, study.seLogRr, model)
+ease = ec.computeExpectedAbsoluteSystematicError(null)
+```
+
+## How many negative controls?
+
+Fifty or so is the working guidance from the OHDSI studies. Below about twenty
+the fitted null is unstable enough that calibration adds as much noise as it
+removes — see
+[the simulation](../methods/null-distribution.qmd#what-the-number-of-controls-buys-you).
+If you are stuck with few controls, use [`fitMcmcNull`](../methods/mcmc.qmd) so
+the resulting uncertainty is at least visible in the output.
+
+## Reproducibility
+
+Stochastic functions draw from a port of R's Mersenne-Twister, so `ec.set_seed`
+reproduces R's `set.seed` streams exactly:
+
+```{python}
+ec.set_seed(42)
+a = ec.simulateControls(n=5, mean=0.2, sd=0.2, trueLogRr=0)
+ec.set_seed(42)
+b = ec.simulateControls(n=5, mean=0.2, sd=0.2, trueLogRr=0)
+print("identical:", np.array_equal(a.logRr.values, b.logRr.values))
+```
+
+## Next
+
+- [Calibrating p-values](p-values.qmd) — options, batches, diagnostics
+- [Calibrating confidence intervals](confidence-intervals.qmd) — positive controls and coverage
+- [MaxSPRT](maxsprt.qmd) — sequential surveillance
+- [Plots](plots.qmd) — the full gallery
+- [Coming from R](from-r.qmd) — translation table
