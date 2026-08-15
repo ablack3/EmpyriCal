@@ -208,8 +208,10 @@ def computeTraditionalCi(logRr, seLogRr, ciWidth=0.95) -> pd.DataFrame:
     pandas.DataFrame
         Columns ``rr``, ``lb`` and ``ub`` (on the ratio scale).
     """
-    logRr = np.asarray(logRr, dtype=float)
-    seLogRr = np.asarray(seLogRr, dtype=float)
+    # atleast_1d so a scalar estimate yields a one-row frame, as in R, rather
+    # than failing pandas' "all scalar values" construction check.
+    logRr = np.atleast_1d(np.asarray(logRr, dtype=float))
+    seLogRr = np.atleast_1d(np.asarray(seLogRr, dtype=float))
     z = qnorm((1 - ciWidth) / 2)
     return pd.DataFrame({
         "rr": np.exp(logRr),
