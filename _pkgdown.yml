@@ -1,0 +1,67 @@
+template:
+  params:
+    bootswatch: cosmo
+
+home:
+  links:
+  - text: Ask a question
+    href: http://forums.ohdsi.org
+
+reference:
+  - title: "P-value calibration"
+    desc: >
+      Functions for calibrating p-values based on an empirical null distribution estimated using negative controls.
+    contents:
+      - fitNull 
+      - fitMcmcNull
+      - fitNullNonNormalLl
+      - computeTraditionalP 
+      - calibrateP 
+      - plotMcmcTrace 
+      - plotForest 
+      - plotCalibration 
+      - plotCalibrationEffect 
+      - plotExpectedType1Error 
+      - computeExpectedAbsoluteSystematicError
+      - compareEase
+  - title: "Confidence interval calibration"
+    desc: >
+      Functions for calibrating confidence intervals based on a systematic error model fitted using negative and positive controls.
+    contents:
+      - fitSystematicErrorModel 
+      - convertNullToErrorModel
+      - computeTraditionalCi     
+      - calibrateConfidenceInterval 
+      - plotTrueAndObserved 
+      - evaluateCiCalibration 
+      - plotCiCalibration 
+      - plotCiCalibrationEffect 
+      - plotCiCoverage 
+      - plotErrorModel 
+  - title: "MaxSPRT and calibration"
+    desc: >
+      Functions for performing empirical calibration when adjusting for sequential testing using MaxSPRT.
+    contents:
+      - calibrateLlr
+      - computeCvBinomial
+      - computeCvPoisson
+      - computeCvPoissonRegression
+  - title: "Data"
+    desc: >
+      Data (real and simulated) for testing and demonstrating empirical calibration.
+    contents:
+      - sccs
+      - caseControl 
+      - cohortMethod 
+      - southworthReplication 
+      - grahamReplication       
+      - simulateControls 
+      - simulateMaxSprtData
+      
+navbar:
+  structure:
+    right: [hades, github]
+  components:
+    hades:
+      text: hadesLogo
+      href: https://ohdsi.github.io/Hades

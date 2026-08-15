@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "empiricalcalibration"
+version = "3.1.4"
+description = "Routines for performing empirical calibration of observational study estimates (Python port of the OHDSI R package)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Martijn Schuemie", email = "schuemie@ohdsi.org" },
+    { name = "Marc Suchard" },
+]
+keywords = ["empirical calibration", "observational studies", "p-values",
+            "negative controls", "OHDSI", "MaxSPRT"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy>=1.22",
+    "scipy>=1.8",
+    "pandas>=1.4",
+    "matplotlib>=3.5",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[project.urls]
+Homepage = "https://ohdsi.github.io/EmpiricalCalibration/"
+Source = "https://github.com/OHDSI/EmpiricalCalibration"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/empiricalcalibration"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/empiricalcalibration", "tests", "README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]

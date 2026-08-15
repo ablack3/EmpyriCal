@@ -1,0 +1,12 @@
+^CRAN-RELEASE$
+extras
+^.*\.Rproj$
+^\.Rproj\.user$
+^deploy.sh$
+^cran-comments.md$
+compare_versions
+.github
+_pkgdown.yml
+docs
+ReverseDependencyCheckFunctions.R
+^CRAN-SUBMISSION$
