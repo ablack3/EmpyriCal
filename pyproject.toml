@@ -4,23 +4,35 @@ build-backend = "hatchling.build"
 
 [project]
 name = "empiricalcalibration"
-version = "3.1.4"
-description = "Routines for performing empirical calibration of observational study estimates (Python port of the OHDSI R package)"
+version = "0.1.0"
+description = "Empirical calibration of p-values and confidence intervals for observational studies — a Python port of the OHDSI R package EmpiricalCalibration 3.1.4"
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+# This is an independent port. The statistical methods, and the R package it
+# reproduces, are the work of Martijn Schuemie and Marc Suchard (OHDSI); see
+# NOTICE. They are credited rather than listed as authors here, because a PyPI
+# author field is a contact point for this package, and they do not maintain it.
 authors = [
-    { name = "Martijn Schuemie", email = "schuemie@ohdsi.org" },
-    { name = "Marc Suchard" },
+    { name = "Adam Black", email = "ablack3@gmail.com" },
+]
+maintainers = [
+    { name = "Adam Black", email = "ablack3@gmail.com" },
 ]
 keywords = ["empirical calibration", "observational studies", "p-values",
             "negative controls", "OHDSI", "MaxSPRT"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Bio-Informatics",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 dependencies = [
     "numpy>=1.22",
@@ -43,7 +55,7 @@ Source = "https://github.com/ablack3/EmpyriCal"
 packages = ["src/empiricalcalibration"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/empiricalcalibration", "tests", "README.md"]
+include = ["src/empiricalcalibration", "tests", "README.md", "LICENSE", "NOTICE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

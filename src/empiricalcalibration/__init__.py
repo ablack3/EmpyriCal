@@ -40,7 +40,13 @@ Two deliberate differences from the R package:
 
 from __future__ import annotations
 
-__version__ = "3.1.4"
+#: Version of this Python package.  It has its own release lineage and does
+#: not track the R package's version.
+__version__ = "0.1.0"
+
+#: Version of the OHDSI R package this port reproduces.  The R-parity gold
+#: standard in ``extras/r-parity/`` was generated against exactly this version.
+__r_package_version__ = "3.1.4"
 
 from . import datasets
 from ._rrng import RRandom, get_generator, set_seed
@@ -105,4 +111,6 @@ __all__ = [
     # classes, data and RNG
     "Null", "McmcNull", "SystematicErrorModel", "datasets",
     "set_seed", "get_generator", "RRandom",
+    # versions
+    "__version__", "__r_package_version__",
 ]

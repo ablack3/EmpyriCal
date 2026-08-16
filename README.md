@@ -26,7 +26,24 @@ calibrates **confidence intervals**, using both negative and positive controls.
 ## Install
 
 ```bash
-pip install -e .
+pip install empiricalcalibration
+```
+
+Or from a clone, for development:
+
+```bash
+pip install -e ".[test]"
+```
+
+## Versioning
+
+This package has its own release lineage and does **not** track the R package's
+version number:
+
+```python
+import empiricalcalibration as ec
+ec.__version__            # this Python package
+ec.__r_package_version__  # the R package version it reproduces: "3.1.4"
 ```
 
 ## Quick start
@@ -184,6 +201,12 @@ extras/r-parity/            scripts that generate and check the R gold standard
 extras/                     the empirical calibration paper (PDF)
 ```
 
-## License
+## License and attribution
 
-Apache 2.0, as the original.
+Apache 2.0, as the original — see [LICENSE](LICENSE).
+
+This is an **independent port**. The statistical methods and the R package it
+reproduces are the work of Martijn J. Schuemie and Marc A. Suchard (OHDSI). It
+is not produced, endorsed or supported by OHDSI or by the R package's authors,
+and issues with the port belong here rather than on the R package's tracker.
+See [NOTICE](NOTICE) for the full attribution.

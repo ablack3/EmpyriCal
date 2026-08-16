@@ -1,0 +1,28 @@
+EmpiricalCalibration (Python)
+Copyright 2026 Adam Black
+
+This product includes software derived from the OHDSI R package
+EmpiricalCalibration (version 3.1.4), which is licensed under the
+Apache License, Version 2.0.
+
+    EmpiricalCalibration
+    Copyright 2014-2025 Observational Health Data Sciences and Informatics
+    Authors: Martijn J. Schuemie, Marc A. Suchard
+    https://github.com/OHDSI/EmpiricalCalibration
+
+This Python package is an independent port. It is not produced, endorsed
+or supported by OHDSI or by the authors of the R package. Report issues
+with the Python port to https://github.com/ablack3/EmpyriCal, not to the
+R package's maintainers.
+
+The statistical methods implemented here are described in:
+
+    Schuemie MJ, Ryan PB, DuMouchel W, Suchard MA, Madigan D.
+    Interpreting observational studies: why empirical calibration is
+    needed to correct p-values. Statistics in Medicine 33(2):209-18, 2014.
+    doi:10.1002/sim.5925
+
+    Schuemie MJ, Hripcsak G, Ryan PB, Madigan D, Suchard MA. Empirical
+    confidence interval calibration for population-level effect estimation
+    studies in observational healthcare data. PNAS 115(11):2571-2577, 2018.
+    doi:10.1073/pnas.1708282114
