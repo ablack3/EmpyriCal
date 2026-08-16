@@ -80,3 +80,10 @@ select = ["E", "F", "W", "I", "UP", "B"]
 # The public API deliberately keeps the R package's camelCase names, and the
 # ports keep R's own argument names (including `iter`, which shadows a builtin).
 ignore = ["E741", "A002"]
+
+[tool.ruff.lint.per-file-ignores]
+# _rrng.py transcribes R's nmath C source line for line, including the Stirling
+# correction polynomials in rbinom. Those are long by nature, and reflowing a
+# nested Horner expression is exactly the kind of edit that silently introduces
+# a transcription error in code required to be bit-exact against R.
+"src/empiricalcalibration/_rrng.py" = ["E501"]

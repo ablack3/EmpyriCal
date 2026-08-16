@@ -19,7 +19,6 @@ from empiricalcalibration.likelihoods import (
     skewNormalLlApproximation,
 )
 
-
 # --- normal ----------------------------------------------------------------
 
 def test_normal_approximation_is_the_normal_log_density():

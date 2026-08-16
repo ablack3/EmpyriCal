@@ -59,19 +59,19 @@ def fitSystematicErrorModel(logRr, seLogRr, trueLogRr,
 
     if np.any(np.isinf(seLogRr)):
         warnings.warn("Estimate(s) with infinite standard error detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         trueLogRr, logRr, seLogRr = drop(~np.isinf(seLogRr))
     if np.any(np.isinf(logRr)):
         warnings.warn("Estimate(s) with infinite logRr detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         trueLogRr, logRr, seLogRr = drop(~np.isinf(logRr))
     if np.any(np.isnan(seLogRr)):
         warnings.warn("Estimate(s) with NA standard error detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         trueLogRr, logRr, seLogRr = drop(~np.isnan(seLogRr))
     if np.any(np.isnan(logRr)):
         warnings.warn("Estimate(s) with NA logRr detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         trueLogRr, logRr, seLogRr = drop(~np.isnan(logRr))
 
     if legacy:

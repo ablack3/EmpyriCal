@@ -77,7 +77,7 @@ def _checkWithinLimits(limits, values, label):
     if values.size > 0:
         if limits[0] > values.min() or limits[1] < values.max():
             warnings.warn(f"Values are outside plotted range. "
-                          f"Consider adjusting {label} parameter")
+                          f"Consider adjusting {label} parameter", stacklevel=3)
 
 
 # --------------------------------------------------------------------------
@@ -239,10 +239,11 @@ def plotCalibrationEffect(logRrNegatives, seLogRrNegatives, logRrPositives=None,
     if showExpectedAbsoluteSystematicError:
         ease = computeExpectedAbsoluteSystematicError(null)
         if isinstance(null, Null):
-            label = "Expected absolute systematic error = %0.2f" % ease
+            label = f"Expected absolute systematic error = {ease:0.2f}"
         else:
-            label = ("Expected absolute systematic error = %0.2f (%0.2f - %0.2f)"
-                     % (ease["ease"].iloc[0], ease["ciLb"].iloc[0], ease["ciUb"].iloc[0]))
+            label = ("Expected absolute systematic error = "
+                     f'{ease["ease"].iloc[0]:0.2f} ({ease["ciLb"].iloc[0]:0.2f} - '
+                     f'{ease["ciUb"].iloc[0]:0.2f})')
         ax.text(0.26, 1.49, label, ha="left", va="top", fontsize=3.5 * 2,
                 bbox=dict(boxstyle="round", fc="white", alpha=0.9), zorder=6)
     # theoretical p < alpha region
@@ -686,7 +687,7 @@ def plotErrorModel(logRr, seLogRr, trueLogRr, title=None, legacy=False, fileName
     ax.axhline(1, color="black", lw=1, zorder=1)
     ax.fill_between(x, ymin, ymax, color=(0, 0, 0.8), alpha=0.3, zorder=2)
     ax.plot(x, y, color=(0, 0, 0.8), zorder=3)
-    for trueRr, yv, lo, hi in simple:
+    for trueRr, _yv, lo, hi in simple:
         ax.plot([trueRr, trueRr], [lo, hi], color=(0, 0, 0.8), lw=1, zorder=4)
         for cap in (lo, hi):
             ax.plot([trueRr * 0.95, trueRr * 1.05], [cap, cap],

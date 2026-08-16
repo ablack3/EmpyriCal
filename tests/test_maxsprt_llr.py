@@ -7,7 +7,6 @@ import pytest
 import empiricalcalibration as ec
 from empiricalcalibration.llr_calibration import computeLlrFromP, computePFromLlr
 
-
 # --- the LLR <-> p-value bridge -------------------------------------------
 
 def test_llr_and_p_are_inverses_in_the_ordinary_range():

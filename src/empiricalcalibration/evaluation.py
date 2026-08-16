@@ -70,19 +70,19 @@ def evaluateCiCalibration(logRr, seLogRr, trueLogRr, strata=None,
 
     if np.any(np.isinf(data["seLogRr"])):
         warnings.warn("Estimate(s) with infinite standard error detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         data = data[~np.isinf(data["seLogRr"])]
     if np.any(np.isinf(data["logRr"])):
         warnings.warn("Estimate(s) with infinite logRr detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         data = data[~np.isinf(data["logRr"])]
     if data["seLogRr"].isna().any():
         warnings.warn("Estimate(s) with NA standard error detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         data = data[~data["seLogRr"].isna()]
     if data["logRr"].isna().any():
         warnings.warn("Estimate(s) with NA logRr detected. "
-                      "Removing before fitting error model")
+                      "Removing before fitting error model", stacklevel=2)
         data = data[~data["logRr"].isna()]
 
     ciWidths = np.round(np.arange(0.01, 0.995, 0.01), 10)

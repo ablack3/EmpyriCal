@@ -36,27 +36,27 @@ def _clean_estimates(logRr, seLogRr, what="null distribution"):
 
     if np.any(np.isinf(seLogRr)):
         warnings.warn("Estimate(s) with infinite standard error detected. "
-                      f"Removing before fitting {what}")
+                      f"Removing before fitting {what}", stacklevel=3)
         keep = ~np.isinf(seLogRr)
         logRr, seLogRr = logRr[keep], seLogRr[keep]
     if np.any(np.isinf(logRr)):
         warnings.warn("Estimate(s) with infinite logRr detected. "
-                      f"Removing before fitting {what}")
+                      f"Removing before fitting {what}", stacklevel=3)
         keep = ~np.isinf(logRr)
         logRr, seLogRr = logRr[keep], seLogRr[keep]
     if np.any(np.isnan(seLogRr)):
         warnings.warn("Estimate(s) with NA standard error detected. "
-                      f"Removing before fitting {what}")
+                      f"Removing before fitting {what}", stacklevel=3)
         keep = ~np.isnan(seLogRr)
         logRr, seLogRr = logRr[keep], seLogRr[keep]
     if np.any(np.isnan(logRr)):
         warnings.warn("Estimate(s) with NA logRr detected. "
-                      f"Removing before fitting {what}")
+                      f"Removing before fitting {what}", stacklevel=3)
         keep = ~np.isnan(logRr)
         logRr, seLogRr = logRr[keep], seLogRr[keep]
     if np.any(np.abs(logRr) > np.log(100)):
         warnings.warn("Estimate(s) with extreme logRr detected: abs(logRr) > log(100). "
-                      f"Removing before fitting {what}")
+                      f"Removing before fitting {what}", stacklevel=3)
         keep = np.abs(logRr) <= np.log(100)
         logRr, seLogRr = logRr[keep], seLogRr[keep]
     return logRr, seLogRr
@@ -91,7 +91,7 @@ def fitNull(logRr, seLogRr) -> Null:
     """
     logRr, seLogRr = _clean_estimates(logRr, seLogRr)
     if logRr.size == 0:
-        warnings.warn("No estimates remaining")
+        warnings.warn("No estimates remaining", stacklevel=2)
         return Null(np.nan, np.nan)
 
     theta = np.array([0.0, 1.0])
@@ -220,7 +220,7 @@ def fitNullNonNormalLl(likelihoodApproximations) -> Null:
                    | likelihoodApproximations["gamma"].isna())
             if bad.any():
                 warnings.warn("Approximations with NA parameters detected. "
-                              "Removing before fitting null distribution")
+                              "Removing before fitting null distribution", stacklevel=2)
                 likelihoodApproximations = likelihoodApproximations[~bad]
             approximations = [likelihoodApproximations.iloc[[i]]
                               for i in range(len(likelihoodApproximations))]
@@ -232,7 +232,7 @@ def fitNullNonNormalLl(likelihoodApproximations) -> Null:
                    | likelihoodApproximations["alpha"].isna())
             if bad.any():
                 warnings.warn("Approximations with NA parameters detected. "
-                              "Removing before fitting null distribution")
+                              "Removing before fitting null distribution", stacklevel=2)
                 likelihoodApproximations = likelihoodApproximations[~bad]
             approximations = [likelihoodApproximations.iloc[[i]]
                               for i in range(len(likelihoodApproximations))]
@@ -240,8 +240,9 @@ def fitNullNonNormalLl(likelihoodApproximations) -> Null:
             print("Detected data following grid distribution")
             try:
                 point = np.asarray([float(c) for c in cols], dtype=float)
-            except (TypeError, ValueError):
-                raise ValueError("Expecting grid data, but not all column names are numeric")
+            except (TypeError, ValueError) as err:
+                raise ValueError(
+                    "Expecting grid data, but not all column names are numeric") from err
             if np.any(np.isnan(point)):
                 raise ValueError("Expecting grid data, but not all column names are numeric")
             approximations = [

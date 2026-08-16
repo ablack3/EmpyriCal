@@ -23,7 +23,6 @@ from empiricalcalibration._rmath import (
 )
 from empiricalcalibration._roptim import optim, optimhess, uniroot
 
-
 # --- densities and distribution functions ---------------------------------
 
 def test_dnorm_at_zero_is_the_analytic_constant():

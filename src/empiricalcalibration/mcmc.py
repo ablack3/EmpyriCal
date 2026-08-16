@@ -138,7 +138,8 @@ def fitMcmcNull(logRr, seLogRr, iter=100000) -> McmcNull:
     rng = get_generator()
 
     if logRr.size == 0:
-        warnings.warn("No valid estimates left. Returning undefined null distribution")
+        warnings.warn("No valid estimates left. Returning undefined null distribution",
+                      stacklevel=2)
         mcmc = {"chain": np.array([[np.nan, np.nan]]),
                 "logLik": np.array([[np.nan]]),
                 "acc": np.array([[np.nan]])}

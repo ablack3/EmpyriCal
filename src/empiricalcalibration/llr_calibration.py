@@ -137,8 +137,9 @@ def calibrateLlr(null, likelihoodApproximation, twoSided=False, upper=True):
             logLikelihood = gridLlApproximation
             try:
                 point = np.asarray([float(c) for c in cols], dtype=float)
-            except (TypeError, ValueError):
-                raise ValueError("Expecting grid data, but not all column names are numeric")
+            except (TypeError, ValueError) as err:
+                raise ValueError(
+                    "Expecting grid data, but not all column names are numeric") from err
             approximations = []
             for i in range(len(likelihoodApproximation)):
                 value = likelihoodApproximation.iloc[i].to_numpy(dtype=float)
@@ -169,8 +170,8 @@ def calibrateLlr(null, likelihoodApproximation, twoSided=False, upper=True):
             mle = lr
             ml = float(np.asarray(logLikelihood(mle, parameters=parameters)).item())
         else:
-            fit = optim([0.0], lambda x: -float(np.asarray(
-                logLikelihood(x=x[0], parameters=parameters)).item()))
+            fit = optim([0.0], lambda x, p=parameters: -float(np.asarray(
+                logLikelihood(x=x[0], parameters=p)).item()))
             mle = float(fit["par"][0])
             ml = -float(fit["value"])
 

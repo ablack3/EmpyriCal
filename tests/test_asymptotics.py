@@ -56,8 +56,9 @@ def test_fitNullNonNormalLl_grid_approximation():
     Slow: every optimiser step numerically integrates a 1000-point profile for
     each of 50 controls.
     """
-    from empiricalcalibration._rmath import dnorm
     import pandas as pd
+
+    from empiricalcalibration._rmath import dnorm
 
     ec.set_seed(123)
     mu, sigma = 0.2, 0.2

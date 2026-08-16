@@ -370,8 +370,8 @@ def _pick_critical_value(values, alpha, sampleSize):
     if below.size == 0:
         raise ValueError("No critical value with an alpha below the one specified")
     pick = below.max()
-    print("Selected alpha: %0.3f (least conservative value below %s)"
-          % (alphas[pick], alpha))
+    print(f"Selected alpha: {alphas[pick]:0.3f} "
+          f"(least conservative value below {alpha})")
     result = float(values[pick])
     return result, float(alphas[pick])
 
@@ -440,7 +440,7 @@ def computeCvPoisson(groupSizes, minimumEvents=1, alpha=0.05, sampleSize=int(1e6
     values = samplePoissonMaxLrr(groupSizes, minimumEvents, sampleSize, nullMean, nullSd)
     if values.max() == 0:
         warnings.warn("Unable to find a critical value that could lead to "
-                      "rejection of the null")
+                      "rejection of the null", stacklevel=2)
         return CriticalValue(np.inf, 0)
     value, sel = _pick_critical_value(values, alpha, int(sampleSize))
     return CriticalValue(value, sel)
@@ -481,7 +481,7 @@ def computeCvBinomial(groupSizes, z, minimumEvents=1, alpha=0.05, sampleSize=int
                                   nullMean, nullSd)
     if values.max() == 0:
         warnings.warn("Unable to find a critical value that could lead to "
-                      "rejection of the null")
+                      "rejection of the null", stacklevel=2)
         return CriticalValue(np.inf, 0)
     value, sel = _pick_critical_value(values, alpha, int(sampleSize))
     return CriticalValue(value, sel)

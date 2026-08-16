@@ -6,7 +6,6 @@ import pytest
 
 import empiricalcalibration as ec
 
-
 # --- evaluateCiCalibration options ----------------------------------------
 
 @pytest.fixture(scope="module")

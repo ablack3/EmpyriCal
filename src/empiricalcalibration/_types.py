@@ -111,7 +111,8 @@ class McmcNull(RNamedVector):
         lb_prec, ub_prec = np.quantile(chain[:, 1], [0.025, 0.975])
         lines.append(f"{'':>9} {'Estimate':>10} {'lower .95':>10} {'upper .95':>10}")
         lines.append(f"{'Mean':>9} {_fmt(self.mean):>10} {_fmt(lb_mean):>10} {_fmt(ub_mean):>10}")
-        lines.append(f"{'Precision':>9} {_fmt(self.precision):>10} {_fmt(lb_prec):>10} {_fmt(ub_prec):>10}")
+        lines.append(f"{'Precision':>9} {_fmt(self.precision):>10} "
+                     f"{_fmt(lb_prec):>10} {_fmt(ub_prec):>10}")
         lines.append("")
         lines.append(f"Acceptance rate: {float(np.mean(self.mcmc['acc']))}")
         return "\n".join(lines)
