@@ -6,8 +6,13 @@ subtitle: "An end-to-end analysis in about thirty lines"
 ## Install
 
 ```bash
-pip install git+https://github.com/ablack3/EmpyriCal.git
+pip install empyricalcalibration
 ```
+
+The install name carries a **y**; the import name does not
+(`import empiricalcalibration as ec`). PyPI rejects `empiricalcalibration` as
+too similar to Google's unrelated
+[`empirical-calibration`](https://pypi.org/project/empirical-calibration/).
 
 Or from a clone, for development:
 

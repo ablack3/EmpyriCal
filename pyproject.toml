@@ -1,10 +1,20 @@
 [build-system]
-requires = ["hatchling"]
+# >=1.27 is the first release that understands the PEP 639 `license` string and
+# `license-files`; older backends fail with "Field `project.license` must be a
+# table", which surfaces as a build crash rather than a resolution error.
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
-name = "empiricalcalibration"
-version = "0.1.0"
+# The distribution name is `empyricalcalibration`, but the import name stays
+# `empiricalcalibration` to match the R package. PyPI rejects the unspelled
+# `empiricalcalibration` as too similar to Google's unrelated
+# `empirical-calibration`, since it strips separators when comparing names.
+name = "empyricalcalibration"
+# Single source of truth is __version__ in src/empiricalcalibration/__init__.py,
+# read by [tool.hatch.version] below, so the installed metadata and
+# ec.__version__ cannot drift apart.
+dynamic = ["version"]
 description = "Empirical calibration of p-values and confidence intervals for observational studies — a Python port of the OHDSI R package EmpiricalCalibration 3.1.4"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -51,11 +61,17 @@ Documentation = "https://ablack3.github.io/EmpyriCal/"
 Source = "https://github.com/ablack3/EmpyriCal"
 "Upstream R package" = "https://github.com/OHDSI/EmpiricalCalibration"
 
+[tool.hatch.version]
+path = "src/empiricalcalibration/__init__.py"
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/empiricalcalibration"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/empiricalcalibration", "tests", "README.md", "LICENSE", "NOTICE"]
+# Leading slashes anchor these at the project root. Unanchored, "tests" and
+# "README.md" match at any depth and sweep extras/r-package/tests/ and its
+# README into the Python sdist.
+include = ["/src/empiricalcalibration", "/tests", "/README.md", "/LICENSE", "/NOTICE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

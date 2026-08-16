@@ -50,8 +50,14 @@ def test_fileName_writes_a_png(fitted, tmp_path, name):
     assert out.stat().st_size > 1000
 
 
-def test_no_fileName_writes_nothing(fitted, tmp_path):
+def test_no_fileName_writes_nothing(fitted, tmp_path, monkeypatch):
+    """Omitting fileName must not write a file anywhere.
+
+    The check only means something if the process CWD is the directory being
+    inspected -- a relative default filename would land there.
+    """
     negatives, _, _, _ = fitted
+    monkeypatch.chdir(tmp_path)
     ec.plotCalibration(negatives.logRr, negatives.seLogRr)
     assert list(tmp_path.iterdir()) == []
 

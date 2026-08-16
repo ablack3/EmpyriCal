@@ -168,7 +168,7 @@ ec.convertNullToErrorModel(null, meanSlope=0.9, sdSlope=0.05)
 ## Visual diagnostics
 
 ```{python}
-#| fig-cap: "The fitted error model. One panel per true effect size; the curve is the error distribution the model predicts, the dots are the controls."
+#| fig-cap: "The fitted error model: mean systematic error against true effect size, with a plus/minus one standard deviation band, and capped bars showing the null fitted separately at each true effect size."
 fig = ec.plotErrorModel(controls.logRr, controls.seLogRr, controls.trueLogRr)
 ```
 

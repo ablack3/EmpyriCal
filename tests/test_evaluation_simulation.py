@@ -101,11 +101,23 @@ def test_simulateControls_cycles_multiple_true_effect_sizes():
 
 
 def test_simulateControls_recovers_the_null_it_was_given():
+    """fitNull must recover the *between-control* SD, net of each control's own
+    standard error.
+
+    The tolerance has to be tight enough to exclude the marginal SD
+    sqrt(sd**2 + seLogRr**2) -- what you would get if seLogRr were never netted
+    out.  With sd=0.2 and seLogRr=0.35 the two differ by 0.20, so a conflation
+    of the two can no longer pass.
+    """
     ec.set_seed(12)
-    d = ec.simulateControls(n=2000, mean=0.3, sd=0.2, trueLogRr=0, seLogRr=0.1)
+    sd, se = 0.2, 0.35
+    d = ec.simulateControls(n=4000, mean=0.3, sd=sd, trueLogRr=0, seLogRr=se)
     null = ec.fitNull(d.logRr, d.seLogRr)
+
+    marginal = np.sqrt(sd ** 2 + se ** 2)
     assert null[0] == pytest.approx(0.3, abs=0.03)
-    assert null[1] == pytest.approx(0.2, abs=0.03)
+    assert null[1] == pytest.approx(sd, abs=0.03)
+    assert abs(null[1] - marginal) > 0.1, "tolerance must exclude the marginal SD"
 
 
 def test_simulateControls_fixed_seLogRr_is_used_exactly():
@@ -159,7 +171,10 @@ def test_simulateMaxSprtData_positive_control_has_the_larger_effect():
             return np.nan
         return (a / exposed.time.sum()) / (b / unexposed.time.sum())
 
-    rrs = last.groupby("outcomeId").apply(rate_ratio, include_groups=False)
+    # Build the per-outcome ratios with an explicit loop rather than
+    # groupby().apply(include_groups=...): that keyword only exists from pandas
+    # 2.2, while this package declares pandas>=1.4.
+    rrs = pd.Series({oid: rate_ratio(g) for oid, g in last.groupby("outcomeId")})
     positive_id = last.outcomeId.max()          # positives get the higher IDs
     negatives = rrs.drop(index=positive_id).dropna()
     assert rrs[positive_id] > negatives.median()

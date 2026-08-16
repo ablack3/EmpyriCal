@@ -118,6 +118,27 @@ def _profileProduct(x, mu, sigma, llApproximationFunction, likelihoodApproximati
                       + llApproximationFunction(x=x, parameters=likelihoodApproximation))
 
 
+def _cheap_params(parameters):
+    """Hoist a one-row parameter frame into a plain dict of floats.
+
+    ``_get`` reads its constants out of ``parameters`` on *every* integrand
+    evaluation, and a pandas scalar lookup is roughly two orders of magnitude
+    dearer than a dict lookup -- it dominated the runtime of the non-normal
+    fits.  Converting once per call is arithmetically identical, since ``_get``
+    would have applied the same ``float()`` to the same values.
+
+    Grid profiles are left alone: their ``point``/``value`` columns are arrays
+    that :func:`gridLlApproximation` indexes as a whole.
+    """
+    if isinstance(parameters, pd.DataFrame):
+        if len(parameters) != 1 or "point" in parameters.columns:
+            return parameters
+        row = parameters.iloc[0]
+        return {name: float(row[name]) for name in parameters.columns
+                if isinstance(row[name], (int, float, np.integer, np.floating))}
+    return parameters
+
+
 def logLikelihoodNullNonNormalLl(theta, llApproximationFunction, likelihoodApproximations):
     """R's ``logLikelihoodNullNonNormalLl``."""
     theta = np.asarray(theta, dtype=float)
@@ -125,13 +146,14 @@ def logLikelihoodNullNonNormalLl(theta, llApproximationFunction, likelihoodAppro
         return 99999.0
     result = 0.0
     sd = 1.0 / np.sqrt(theta[1])
+    approximations = [_cheap_params(a) for a in likelihoodApproximations]
     with np.errstate(divide="ignore", invalid="ignore", over="ignore", under="ignore"):
         if sd < 1e-6:
-            for approx in likelihoodApproximations:
+            for approx in approximations:
                 result = result - float(
                     np.asarray(llApproximationFunction(x=theta[0], parameters=approx)).item())
         else:
-            for approx in likelihoodApproximations:
+            for approx in approximations:
                 val = integrate(
                     lambda x, a=approx: float(np.asarray(
                         _profileProduct(x, theta[0], sd, llApproximationFunction, a)).item()),

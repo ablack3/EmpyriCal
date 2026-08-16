@@ -26,7 +26,16 @@ calibrates **confidence intervals**, using both negative and positive controls.
 ## Install
 
 ```bash
-pip install empiricalcalibration
+pip install empyricalcalibration
+```
+
+Note the **y**: the install name is `empyricalcalibration`, matching this
+repository, because PyPI rejects `empiricalcalibration` as too similar to
+Google's unrelated [`empirical-calibration`](https://pypi.org/project/empirical-calibration/).
+The **import** name is unaffected:
+
+```python
+import empiricalcalibration as ec
 ```
 
 Or from a clone, for development:

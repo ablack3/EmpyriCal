@@ -209,9 +209,13 @@ def computeTraditionalCi(logRr, seLogRr, ciWidth=0.95) -> pd.DataFrame:
         Columns ``rr``, ``lb`` and ``ub`` (on the ratio scale).
     """
     # atleast_1d so a scalar estimate yields a one-row frame, as in R, rather
-    # than failing pandas' "all scalar values" construction check.
+    # than failing pandas' "all scalar values" construction check; then
+    # broadcast so that mixing a scalar with a vector recycles the way R does
+    # (atleast_1d alone turns a scalar into length 1, which pandas rejects
+    # against a longer column).
     logRr = np.atleast_1d(np.asarray(logRr, dtype=float))
     seLogRr = np.atleast_1d(np.asarray(seLogRr, dtype=float))
+    logRr, seLogRr = np.broadcast_arrays(logRr, seLogRr)
     z = qnorm((1 - ciWidth) / 2)
     return pd.DataFrame({
         "rr": np.exp(logRr),

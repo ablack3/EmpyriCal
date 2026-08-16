@@ -298,7 +298,10 @@ def plotCalibration(logRr, seLogRr, useMcmc=False, legendPosition="right",
     matplotlib.figure.Figure
     """
     from .asymptotics import _clean_estimates
-    logRr, seLogRr = _clean_estimates(logRr, seLogRr)
+    # R's plotCalibration inlines only four filters -- it does not drop extreme
+    # logRr the way fitNull does -- so dropExtreme=False keeps the plotted
+    # points, curves and leave-one-out denominators identical to R's.
+    logRr, seLogRr = _clean_estimates(logRr, seLogRr, dropExtreme=False)
 
     data = pd.DataFrame({"logRr": logRr, "SE": seLogRr})
     data["Z"] = data["logRr"] / data["SE"]
@@ -478,9 +481,12 @@ def plotTrueAndObserved(logRr, seLogRr, trueLogRr, xLabel="Relative risk",
     -------
     matplotlib.figure.Figure
     """
-    logRr = np.asarray(logRr, dtype=float)
-    seLogRr = np.asarray(seLogRr, dtype=float)
-    trueLogRr = np.asarray(trueLogRr, dtype=float)
+    # atleast_1d + broadcast so a single estimate works and a scalar mixes with
+    # a vector, matching computeTraditionalCi and R's recycling.
+    logRr = np.atleast_1d(np.asarray(logRr, dtype=float))
+    seLogRr = np.atleast_1d(np.asarray(seLogRr, dtype=float))
+    trueLogRr = np.atleast_1d(np.asarray(trueLogRr, dtype=float))
+    logRr, seLogRr, trueLogRr = np.broadcast_arrays(logRr, seLogRr, trueLogRr)
 
     breaks = [0.25, 0.5, 1, 2, 4, 6, 8, 10]
     data = pd.DataFrame({

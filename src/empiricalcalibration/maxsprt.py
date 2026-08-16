@@ -135,7 +135,10 @@ def _max_llr_poisson(observed, expected, minimumEvents):
             continue
         o = obs[active]
         llr = _dpois_vec(o, o) - _dpois_vec(o, exp_)
-        maxLlr[active] = np.maximum(maxLlr[active], llr)
+        # np.fmax, not np.maximum: R's `if (llr > maxLlr)` DROPS a NaN llr,
+        # whereas np.maximum propagates it and destroys an already-correct
+        # running maximum for the rest of the sample.
+        maxLlr[active] = np.fmax(maxLlr[active], llr)
     return maxLlr
 
 
@@ -233,8 +236,15 @@ def _max_llr_binomial(cumObs, cumCount, p, minimumEvents):
         if not np.any(active):
             continue
         o = obs[active]
-        llr = (_dbinom_vec(o, cnt, o / cnt) - _dbinom_vec(o, cnt, p))
-        maxLlr[active] = np.maximum(maxLlr[active], llr)
+        # Non-integer groupSizes let o/cnt exceed 1, making both terms -inf and
+        # their difference nan; that is expected here and handled by fmax below,
+        # so the invalid-value warning is suppressed rather than shown.
+        with np.errstate(invalid="ignore"):
+            llr = (_dbinom_vec(o, cnt, o / cnt) - _dbinom_vec(o, cnt, p))
+        # np.fmax, not np.maximum: R's `if (llr > maxLlr)` DROPS a NaN llr,
+        # whereas np.maximum propagates it and destroys an already-correct
+        # running maximum for the rest of the sample.
+        maxLlr[active] = np.fmax(maxLlr[active], llr)
     return maxLlr
 
 
@@ -324,7 +334,10 @@ def _pois_reg_fast(rng, groupSizes, lambda1, lambda2, z, minimumEvents, sampleSi
         expected1 = (a1 + a2) / (z + 1)
         llr = ((_dpois_vec(a1, a1) + _dpois_vec(a2, a2))
                - (_dpois_vec(a1, expected1) + _dpois_vec(a2, expected1 * z)))
-        maxLlr[active] = np.maximum(maxLlr[active], llr)
+        # np.fmax, not np.maximum: R's `if (llr > maxLlr)` DROPS a NaN llr,
+        # whereas np.maximum propagates it and destroys an already-correct
+        # running maximum for the rest of the sample.
+        maxLlr[active] = np.fmax(maxLlr[active], llr)
     return maxLlr
 
 
@@ -338,7 +351,12 @@ def _pois_reg_scalar(rng, groupSizes, lambda1, lambda2, z, minimumEvents, sample
         for j in range(G):
             observed1 += rng.rpois(lambda1[j])
             observed2 += rng.rpois(lambda2[j])
-            if observed1 >= minimumEvents and observed2 / observed1 < z:
+            # observed1 == 0 is only reachable with minimumEvents == 0, which
+            # _validate permits. The C++ divides in double and gets inf/nan, so
+            # the comparison is false; Python floats would raise instead. The
+            # vectorised twin guards this the same way.
+            ratio = observed2 / observed1 if observed1 > 0 else np.inf
+            if observed1 >= minimumEvents and ratio < z:
                 expected1 = (observed1 + observed2) / (z + 1)
                 llr = ((dpois(observed1, observed1, log=True)
                         + dpois(observed2, observed2, log=True))

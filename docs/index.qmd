@@ -29,8 +29,13 @@ the study is as biased as it demonstrably is on things we know are null**?
 ## Install
 
 ```bash
-pip install git+https://github.com/ablack3/EmpyriCal.git
+pip install empyricalcalibration
 ```
+
+Note the **y** in the install name — PyPI rejects `empiricalcalibration` as too
+similar to Google's unrelated
+[`empirical-calibration`](https://pypi.org/project/empirical-calibration/). The
+import name is unaffected: `import empiricalcalibration as ec`.
 
 ## Sixty seconds
 

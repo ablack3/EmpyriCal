@@ -42,7 +42,7 @@ from __future__ import annotations
 
 #: Version of this Python package.  It has its own release lineage and does
 #: not track the R package's version.
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 #: Version of the OHDSI R package this port reproduces.  The R-parity gold
 #: standard in ``extras/r-parity/`` was generated against exactly this version.

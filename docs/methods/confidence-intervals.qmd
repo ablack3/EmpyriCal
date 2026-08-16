@@ -94,7 +94,7 @@ print(model)
 ```
 
 ```{python}
-#| fig-cap: "The fitted systematic error model. Each panel is one true effect size; the curve is the fitted error distribution the model expects there, the dots are the controls."
+#| fig-cap: "The fitted systematic error model: mean systematic error against true effect size, with a band at plus and minus one standard deviation. The capped bars are the null fitted at each true effect size the controls actually cover."
 fig = ec.plotErrorModel(data.logRr, data.seLogRr, data.trueLogRr)
 ```
 
@@ -127,8 +127,10 @@ g(\beta) \;=\; z \;+\; \frac{\mu(\beta) - \hat\beta}{\sqrt{\sigma(\beta)^2 + \ha
 $$
 :::
 
-for the **lower** bound, and the same equation with $z$ replaced by $-z$ for the
-**upper** bound. The **calibrated point estimate** is the solution with $z = 0$
+for the **upper** bound, and the same equation with $z$ replaced by $-z$ for the
+**lower** bound. (Sign check: $z$ is *negative*, so leaving it as written pushes
+the solution above the estimate.) The **calibrated point estimate** is the
+solution with $z = 0$
 — the effect size at which the model expects, on average, to observe what was
 observed:
 

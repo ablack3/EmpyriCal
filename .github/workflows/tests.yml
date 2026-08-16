@@ -81,5 +81,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install ruff
+      # Pinned: `select` is prefix-based, so an unpinned ruff opts into new
+      # rules on release and turns main red without a code change.
+      - run: python -m pip install ruff==0.16.3
       - run: ruff check src tests

@@ -26,8 +26,15 @@ from .likelihoods import (
 __all__ = ["fitNull", "calibrateP", "computeTraditionalP", "fitNullNonNormalLl"]
 
 
-def _clean_estimates(logRr, seLogRr, what="null distribution"):
-    """The five validity filters R applies before fitting, with the same warnings."""
+def _clean_estimates(logRr, seLogRr, what="null distribution", dropExtreme=True):
+    """The validity filters R applies before fitting, with the same warnings.
+
+    ``dropExtreme`` selects between R's two variants.  ``fitNull`` and
+    ``fitMcmcNull`` apply five filters, the fifth dropping ``abs(logRr) >
+    log(100)``.  R's ``plotCalibration`` inlines only the first four, so it
+    plots extreme estimates rather than silently discarding them; pass
+    ``dropExtreme=False`` to match it.
+    """
     logRr = np.atleast_1d(np.asarray(logRr, dtype=float)).copy()
     seLogRr = np.atleast_1d(np.asarray(seLogRr, dtype=float)).copy()
     if logRr.size != seLogRr.size:
@@ -54,7 +61,7 @@ def _clean_estimates(logRr, seLogRr, what="null distribution"):
                       f"Removing before fitting {what}", stacklevel=3)
         keep = ~np.isnan(logRr)
         logRr, seLogRr = logRr[keep], seLogRr[keep]
-    if np.any(np.abs(logRr) > np.log(100)):
+    if dropExtreme and np.any(np.abs(logRr) > np.log(100)):
         warnings.warn("Estimate(s) with extreme logRr detected: abs(logRr) > log(100). "
                       f"Removing before fitting {what}", stacklevel=3)
         keep = np.abs(logRr) <= np.log(100)

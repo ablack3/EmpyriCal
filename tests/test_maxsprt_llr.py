@@ -134,6 +134,43 @@ def test_scalar_fallback_path_agrees_in_magnitude():
     assert 1.0 < float(big) < 10.0
 
 
+def test_binomial_fast_path_matches_the_exact_path_exactly():
+    """Regression: the vectorised sampler used np.maximum, which propagates NaN.
+
+    groupSizes are *expected* event counts, so non-integer values are ordinary.
+    They make observed/count exceed 1, both dbinom terms return -inf, and the
+    LLR is nan. np.maximum then destroyed the running maximum for the rest of
+    that sample, and computeCvBinomial returned a critical value roughly ten
+    times too small -- a MaxSPRT analysis that signals far above its nominal
+    alpha, with no error raised. R's `if (llr > maxLlr)` drops NaN instead.
+    """
+    from empiricalcalibration import maxsprt as ms
+
+    groupSizes = [1.6, 1.6, 1.6]
+    ec.set_seed(1)
+    fast = ms.sampleBinomialMaxLrr(groupSizes, 0.5, 1, 200, 0.0, 0.0)
+    ec.set_seed(1)
+    exact = ms._binomial_scalar(ec.get_generator(), np.asarray(groupSizes, dtype=float),
+                                0.5, 1, 200, 0.0, 0.0)
+
+    assert not np.isnan(fast).any(), "fast path must not leak NaN"
+    assert np.array_equal(fast, exact), "fast path must equal the exact path bit for bit"
+
+    ec.set_seed(1)
+    cv = ec.computeCvBinomial(groupSizes, z=1, sampleSize=2000, alpha=0.2)
+    assert float(cv) > 1.0, "a NaN-poisoned maximum collapses this toward zero"
+
+
+def test_minimumEvents_zero_does_not_raise():
+    """Regression: _validate permits minimumEvents=0, which disabled the guard
+    on `observed2 / observed1` in the exact Poisson-regression path and raised
+    ZeroDivisionError. R divides in double and gets inf, so the test is false."""
+    ec.set_seed(1)
+    cv = ec.computeCvPoissonRegression([2.0, 40.0], z=1, minimumEvents=0,
+                                       sampleSize=500)
+    assert np.isfinite(float(cv))
+
+
 # --- calibrateLlr ----------------------------------------------------------
 
 @pytest.fixture(scope="module")

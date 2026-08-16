@@ -8,7 +8,7 @@ numbers as the R package.
 Rscript generate_r_gold_standard.R
 
 # 2. compare the Python package against it
-PYTHONPATH=../src python compare_to_r.py
+PYTHONPATH=../../src python compare_to_r.py
 ```
 
 `compare_to_r.py` prints one row per checkpoint with the maximum relative

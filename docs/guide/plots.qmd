@@ -94,8 +94,10 @@ fig = ec.plotMcmcTrace(mcmc_null)
 
 ### `plotErrorModel`
 
-The fitted systematic error model — one panel per true effect size, showing the
-error distribution the model predicts against the controls observed there.
+The fitted systematic error model on a single pair of axes: mean systematic
+error against true effect size, with a band at plus and minus one standard
+deviation, and capped bars marking the null fitted separately at each true
+effect size the controls cover.
 
 ```{python}
 #| fig-cap: "Fitted systematic error model."
@@ -123,7 +125,9 @@ from one expensive evaluation, as here.
 
 ### `plotCiCalibration`
 
-Estimates and their intervals, calibrated and not, against the truth.
+Coverage against nominal interval width, one panel per true effect size —
+calibrated as a solid line, uncalibrated dash-dot, with the diagonal marking
+nominal coverage. Same quantity as `plotCiCoverage`, laid out per stratum.
 
 ```{python}
 #| fig-cap: "Calibrated and uncalibrated intervals for the controls."
